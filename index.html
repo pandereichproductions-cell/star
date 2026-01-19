@@ -30,6 +30,11 @@
       display:flex; align-items:center; justify-content:space-between; gap:12px;
       margin:0 0 10px 0; color:var(--muted); font-size:14px;
     }
+	.hud-right{
+	  display:flex;
+	  align-items:center;
+	  gap:10px;
+	}
     .hud b{ color:var(--fg); }
     canvas{
       width:100%;
@@ -48,25 +53,53 @@
       background:rgba(255,255,255,.06);
       outline:1px solid rgba(255,255,255,.08);
     }
-    .dot{
+        .dot{
       width:8px; height:8px; border-radius:50%;
       background:var(--accent);
       box-shadow:0 0 0 4px rgba(125,211,252,.15);
     }
+
+    /* 🔊 Botón música ON/OFF */
+	#musicToggle{
+	  font-size: 16px;
+	  padding: 4px 8px;
+	  border-radius: 8px;
+	  border: none;
+
+	  background: rgba(255,255,255,.08);
+	  color: var(--fg);
+	  cursor: pointer;
+
+	  line-height: 1;
+	  user-select: none;
+	}
+	#musicToggle:hover{
+	  background: rgba(255,255,255,.14);
+	}
+	#musicToggle:active{
+	  transform: scale(0.95);
+	}
+
+
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="hud">
-      <div class="pill"><span class="dot"></span> <span>Impulso con <b>Espacio</b> o <b>Click</b></span></div>
-      <div>Puntos: <b id="score">0</b> · Récord: <b id="best">0</b></div>
-    </div>
+   <div class="hud">
+	  <div class="pill">
+		<span class="dot"></span>
+		<span>Impulso con <b>Espacio</b> o <b>Click</b></span>
+	  </div>
+
+	  <div class="hud-right">
+		<span>Puntos: <b id="score">0</b> · Récord: <b id="best">0</b></span>
+		<button id="musicToggle" aria-label="Música">🔊</button>
+	  </div>
+	</div>
+
 
     <canvas id="c" width="960" height="440"></canvas>
-
-    <div class="hint">
-      Esquiva asteroides y TIE. Los TIE disparan láser rojo. Pulsa <b>R</b> para reiniciar.
-    </div>
+	
   </div>
 
 <script>
@@ -91,6 +124,73 @@
   // Evita scroll/zoom al tocar el canvas
   canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove',  (e) => e.preventDefault(), { passive: false });
+
+	// ===== AUDIO =====
+	let musicStarted = false;
+	let audioUnlocked = false;
+	let audioUnlockPromise = null;
+	//let musicEnabled = true;
+	let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
+
+	function saveAudioPref(){
+	  localStorage.setItem("audioEnabled", audioEnabled);
+	}
+
+
+	const sfxCrash = new Audio("audio/8-bit-explosion.mp3");
+	sfxCrash.volume = 0.9;
+
+	const sfxLaser = new Audio("audio/8-bit-laser.mp3");
+	sfxLaser.volume = 0.6;
+
+	const music = new Audio("audio/8-bit-music.mp3");
+	music.loop = true;
+	music.volume = 0.35;
+
+	// ---- Botón música ----
+	const musicBtn = document.getElementById("musicToggle");
+
+	function updateMusicIcon(){
+	  musicBtn.textContent = audioEnabled ? "🔊" : "🔇";
+	}
+
+	musicBtn.addEventListener("click", () => {
+	  unlockAudio().then(() => {
+		audioEnabled = !audioEnabled;
+		saveAudioPref();
+		updateMusicIcon();
+
+		if (!audioEnabled){
+		  stopMusic();
+		} else if (!gameOver && running){
+		  musicStarted = true;
+		  startMusic();
+		}
+	  });
+	});
+
+
+	updateMusicIcon();
+
+
+
+	
+function startMusic(){
+  //if (!musicEnabled) return;
+  if (!audioEnabled) return;
+  if (!audioUnlocked) return;
+  if (!music.paused) return;
+
+  music.currentTime = 0;
+  music.play().catch(()=>{});
+}
+
+
+function stopMusic(){
+  if (!music.paused) music.pause();
+}
+
+
 
   // --- HALCÓN: tu imagen embebida (con fondo transparente) ---
 // --- HALCÓN: PNG embebido (tu imagen) + fondo negro transparente ---
@@ -120,9 +220,20 @@
 	let shakeT = 0;
 	let shakeAmp = 0;
 	let flashT = 0;
-
 	let canRestart = true;
 	let restartTimer = 0;
+	// --- Fases / avisos en pantalla ---
+	let phaseMsg = "";
+	let phaseT = 0;
+	let phaseDur = 0;
+	let phase2Shown = false;
+
+	function showPhase(msg, dur=2.6){
+		phaseMsg = msg;
+		phaseDur = dur;
+		phaseT = dur;
+	}
+
 
 
   
@@ -165,6 +276,22 @@ const G = {
   mid:  "#3b4558",
   hi:   "#5f6878"
 };
+
+const laserPool = Array.from({length: 5}, () => {
+  const a = new Audio("audio/8-bit-laser.mp3");
+  a.volume = 0.6;
+  return a;
+});
+let laserIdx = 0;
+
+function playLaser(){
+  if (!audioUnlocked || !audioEnabled) return;
+  const a = laserPool[laserIdx];
+  laserIdx = (laserIdx + 1) % laserPool.length;
+  a.currentTime = 0;
+  a.play().catch(()=>{});
+}
+
 
 function buildGroundTile(){
   groundTile = document.createElement("canvas");
@@ -512,6 +639,19 @@ function initStars(){
 	  shakeT = 0;
 	  shakeAmp = 0;
 	  flashT = 0;
+	  // Fases
+	  phase2Shown = false;
+	  showPhase("FASE 1 · Campo de asteroides", 2.6);
+	  
+	  if (audioEnabled){
+		  musicStarted = true;
+		  startMusic();
+		} else {
+		  musicStarted = false;
+		  stopMusic();
+		}
+
+	  
   }
 
   function thrust(){
@@ -521,11 +661,35 @@ function initStars(){
     ship.engineFlash = 15;
   }
 
-  window.addEventListener("keydown", (e) => {
-    if (e.code === "Space") { e.preventDefault(); thrust(); }
-    if (e.code === "KeyR") { e.preventDefault(); reset(); }
-  }, {passive:false});
-  canvas.addEventListener("pointerdown", thrust);
+window.addEventListener("keydown", (e) => {
+  if (e.code === "Space") {
+	e.preventDefault();
+	
+	unlockAudio().then(() => {
+    if (!musicStarted && !gameOver) {
+      startMusic();
+      musicStarted = true;
+    }
+	});
+	thrust();
+   }
+
+  if (e.code === "KeyR") {
+	e.preventDefault();
+	reset();
+  }
+}, { passive:false });
+
+canvas.addEventListener("pointerdown", () => {
+  unlockAudio().then(() => {
+    if (!musicStarted && !gameOver) {
+      startMusic();
+      musicStarted = true;
+    }
+  });
+  thrust();
+});
+
 
   // --- Spawns ---
   function spawnAsteroid(){
@@ -703,10 +867,46 @@ function drawParticles(){
   }
 }
 
+
+function unlockAudio(){
+  if (audioUnlocked) return Promise.resolve();
+  if (audioUnlockPromise) return audioUnlockPromise;
+
+  audioUnlocked = true;
+
+  // iOS: play + pause para “desbloquear”
+	 audioUnlockPromise = music.play().then(() => {
+	  // ⬇️ SOLO pausar si todavía NO hemos empezado música de verdad
+	  if (!musicStarted) {
+		music.pause();
+		music.currentTime = 0;
+	  }
+	  if (!audioEnabled) {
+		music.pause();
+		music.currentTime = 0;
+	  }
+	}).catch(() => {});
+
+
+  return audioUnlockPromise;
+}
+
+
+
   function crash(){
     if (gameOver) return;
+	
+	if (audioUnlocked && audioEnabled){
+    sfxCrash.currentTime = 0;
+    sfxCrash.play().catch(()=>{});
+	}
+	
+	 stopMusic();
+	
 	spawnExplosion(ship.x, ship.y);
     gameOver = true;
+	phaseT = 0;
+	phaseMsg = "";
     const s = Math.floor(score);
     if (s > best){
       best = s;
@@ -720,6 +920,8 @@ function drawParticles(){
 
   function update(dt){
 	//updateParticles(dt);
+	// timer avisos de fase
+	if (phaseT > 0) phaseT = Math.max(0, phaseT - dt);
     if (!running) return;
 
     // Dificultad suave
@@ -769,7 +971,14 @@ function drawParticles(){
       spawnAsteroid();
     }
 
-    // Solo aparecen TIE cuando has avanzado suficiente
+    
+	// Aviso de FASE 2 al desbloquear TIE (sin pausar)
+	if (!phase2Shown && worldX >= TIE_UNLOCK_DIST){
+		phase2Shown = true;
+		showPhase("FASE 2 · ¡Peligro! TIE Fighters", 2.8);
+	}
+
+// Solo aparecen TIE cuando has avanzado suficiente
 	if (worldX >= TIE_UNLOCK_DIST){
 	  tTie += dt;
 	  if (tTie >= nextTie){
@@ -829,6 +1038,8 @@ function drawParticles(){
 		  h: 4,
 		  life: 2.0
 		});
+		
+		playLaser();
 
       }
 
@@ -989,12 +1200,12 @@ function draw(){
 
     // UI
     if (!running){
-      centerText("Click o Espacio para empezar", 18, "rgba(233,238,247,.92)", 0);
-      centerText("Halcón Milenario vs Asteroides + TIE", 14, "rgba(154,167,189,.95)", 28);
+      centerText("FASE 1 · Campo de asteroides", 24, "rgba(233,238,247,.96)", -6);
+      centerText("Click o Espacio para empezar", 16, "rgba(154,167,189,.95)", 26);
     }
     if (gameOver){
-      centerText("GAME OVER — click/Espacio para reiniciar", 20, "rgba(255,255,255,.95)", -8);
-      centerText("R para reiniciar", 14, "rgba(154,167,189,.95)", 22);
+      centerText("GAME OVER", 40, "rgba(255,255,255,.95)", -8);
+      centerText("Click/Espacio/R para reiniciar", 14, "rgba(154,167,189,.95)", 22);
     }
 
     // score grande
@@ -1010,6 +1221,25 @@ function draw(){
     }
 	
 	drawParticles();
+
+	// Aviso de fase (aparece y se desvanece)
+	if (!gameOver && phaseT > 0 && phaseMsg){
+		// decae con el tiempo real
+		// (phaseT se reduce en loop, por si el frame rate cambia)
+		const tLeft = phaseT;
+		const t = phaseDur - tLeft;
+		const fade = 0.35;
+		let a = 1;
+		if (t < fade) a = t / fade;
+		else if (tLeft < fade) a = tLeft / fade;
+		a = Math.max(0, Math.min(1, a));
+		ctx.save();
+		ctx.globalAlpha = 0.92 * a;
+		ctx.fillStyle = "rgba(0,0,0,0.22)";
+		//ctx.fillRect(0, (H/2 - 34)|0, W, 68);
+		centerText(phaseMsg, 26, "rgba(233,238,247,.98)", 0);
+		ctx.restore();
+	}
 	// ✅ MUY IMPORTANTE: volver al estado previo al shake
 	ctx.restore();
 
