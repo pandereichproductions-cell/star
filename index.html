@@ -284,13 +284,21 @@ const laserPool = Array.from({length: 5}, () => {
 });
 let laserIdx = 0;
 
+let lastLaserSfx = 0;
+
 function playLaser(){
   if (!audioUnlocked || !audioEnabled) return;
+
+  const now = performance.now();
+  if (now - lastLaserSfx < 100) return; // 100ms => máx ~10 sonidos/seg
+  lastLaserSfx = now;
+
   const a = laserPool[laserIdx];
   laserIdx = (laserIdx + 1) % laserPool.length;
   a.currentTime = 0;
   a.play().catch(()=>{});
 }
+
 
 
 function buildGroundTile(){
@@ -876,22 +884,24 @@ function unlockAudio(){
 
   audioUnlocked = true;
 
-  // iOS: play + pause para “desbloquear”
-	 audioUnlockPromise = music.play().then(() => {
-	  // ⬇️ SOLO pausar si todavía NO hemos empezado música de verdad
-	  if (!musicStarted) {
-		music.pause();
-		music.currentTime = 0;
-	  }
-	  if (!audioEnabled) {
-		music.pause();
-		music.currentTime = 0;
-	  }
-	}).catch(() => {});
+  audioUnlockPromise = music.play().then(() => {
+    // Pausar si no toca música
+    if (!musicStarted || !audioEnabled){
+      music.pause();
+      music.currentTime = 0;
+    }
 
+    // 🔥 Precalentar FX (correcto aquí)
+    laserPool.forEach(a => {
+      try { a.load(); } catch(e){}
+    });
+    try { sfxCrash.load(); } catch(e){}
+
+  }).catch(() => {});
 
   return audioUnlockPromise;
 }
+
 
 
 
