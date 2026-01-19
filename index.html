@@ -129,8 +129,26 @@
 	let musicStarted = false;
 	let audioUnlocked = false;
 	let audioUnlockPromise = null;
+	let laserCtx = null;
+	let laserBuf = null;
+	let laserGain = null;
+
 	//let musicEnabled = true;
 	let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
+	
+	async function initLaserWebAudio(){
+	  if (laserCtx) return;
+
+	  laserCtx = new (window.AudioContext || window.webkitAudioContext)();
+	  laserGain = laserCtx.createGain();
+	  laserGain.gain.value = 0.45; // volumen láser
+	  laserGain.connect(laserCtx.destination);
+
+	  const res = await fetch("audio/8-bit-laser.mp3");
+	  const arr = await res.arrayBuffer();
+	  laserBuf = await laserCtx.decodeAudioData(arr);
+	}
+
 
 	function saveAudioPref(){
 	  localStorage.setItem("audioEnabled", audioEnabled);
@@ -145,7 +163,7 @@
 
 	const music = new Audio("audio/8-bit-music.mp3");
 	music.loop = true;
-	music.volume = 0.35;
+	music.volume = 0.20;
 
 	// ---- Botón música ----
 	const musicBtn = document.getElementById("musicToggle");
@@ -290,14 +308,24 @@ function playLaser(){
   if (!audioUnlocked || !audioEnabled) return;
 
   const now = performance.now();
-  if (now - lastLaserSfx < 100) return; // 100ms => máx ~10 sonidos/seg
+  if (now - lastLaserSfx < 120) return;
   lastLaserSfx = now;
 
+  if (laserCtx && laserBuf){
+    const src = laserCtx.createBufferSource();
+    src.buffer = laserBuf;
+    src.connect(laserGain);
+    src.start(0);
+    return;
+  }
+
+  // fallback
   const a = laserPool[laserIdx];
   laserIdx = (laserIdx + 1) % laserPool.length;
   a.currentTime = 0;
   a.play().catch(()=>{});
 }
+
 
 
 
@@ -891,11 +919,18 @@ function unlockAudio(){
       music.currentTime = 0;
     }
 
-    // 🔥 Precalentar FX (correcto aquí)
+    // 🔥 Precalentar FX HTMLAudio
     laserPool.forEach(a => {
       try { a.load(); } catch(e){}
     });
     try { sfxCrash.load(); } catch(e){}
+
+    // 🔥🔥 AQUÍ VA EL PUNTO 3) 🔥🔥
+    initLaserWebAudio().then(() => {
+      if (laserCtx && laserCtx.state === "suspended") {
+        laserCtx.resume().catch(()=>{});
+      }
+    });
 
   }).catch(() => {});
 
