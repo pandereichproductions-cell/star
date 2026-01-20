@@ -1552,29 +1552,61 @@ function hexWingLR(g, x, y, w, h, color){
   }
 }
 
+// Línea pixel (Bresenham) para brazos
+function linePx(g, x0, y0, x1, y1, color){
+  x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0;
+  let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+
+  while (true){
+    px(g, x0, y0, 1, 1, color);
+    if (x0 === x1 && y0 === y1) break;
+    const e2 = 2 * err;
+    if (e2 >= dy){ err += dy; x0 += sx; }
+    if (e2 <= dx){ err += dx; y0 += sy; }
+  }
+}
+
+// Brazo tipo “tubo” 2px + highlight opcional
+function arm(g, x0, y0, x1, y1, col, hiCol){
+  linePx(g, x0, y0,   x1, y1,   col);
+  linePx(g, x0, y0+1, x1, y1+1, col);
+  if (hiCol) linePx(g, x0, y0-1, x1, y1-1, hiCol);
+}
+
 for (let f = 0; f < 2; f++){
   const [c,g] = mk(44, 30);
   g.clearRect(0, 0, 44, 30);
 
   const wing = "#374151";
   const body = "#9ca3af";
-  const dark = "#111827";
 
-  // Colores brazos 3D (más visibles)
+  // Colores brazos 3D
   const armTop = "#0f172a";            // “encima”
   const armBot = "rgba(0,0,0,.55)";    // “debajo”
   const armHi  = "rgba(255,255,255,.10)";
 
-  // Alas hexagonales (más anchas para que no parezcan flechas)
+  // Alas
   const WING_W = 16, WING_H = 18;
   const Lx = 0, Rx = 28, Wy = 6;
 
-  // === Brazo derecho “debajo” (dibujar ANTES de alas, y más abajo para que asome) ===
-  px(g, 26, 18, 6, 2, armBot);
-  px(g, 24, 17, 6, 2, armBot);
-  px(g, 25, 19, 4, 1, armHi);
+  // Cockpit (centro y radio)
+  const cx = 22, cy = 15, r = 6;
 
-  // === Alas ===
+  // Centros geométricos de alas
+  const Lcx = (Lx + (WING_W/2))|0;       // 8
+  const Rcx = (Rx + (WING_W/2))|0;       // 36
+  const Wcy = (Wy + (WING_H/2))|0;       // 15
+
+  // Puntos de salida en el borde del cockpit
+  const leftEdgeX  = cx - r;            // 16
+  const rightEdgeX = cx + r;            // 28
+
+  // 1) Brazo derecho “debajo” (antes de alas)
+  arm(g, rightEdgeX, cy + 2, Rcx, Wcy + 2, armBot, null);
+
+  // 2) Alas hexagonales
   hexWingLR(g, Lx, Wy, WING_W, WING_H, wing);
   hexWingLR(g, Rx, Wy, WING_W, WING_H, wing);
 
@@ -1591,15 +1623,10 @@ for (let f = 0; f < 2; f++){
     px(g, Rx + dx, Wy + yy, ww, 1, "rgba(0,0,0,.22)");
   }
 
-  // === Brazo izquierdo “encima” (dibujar DESPUÉS de alas, y más arriba para que asome) ===
-  px(g, 12, 10, 6, 2, armTop);
-  px(g, 14, 11, 6, 2, armTop);
-  px(g, 13, 9, 4, 1, armHi);
+  // 3) Brazo izquierdo “encima” (después de alas)
+  arm(g, leftEdgeX, cy - 2, Lcx, Wcy - 2, armTop, armHi);
 
-  // Cockpit (redonda, estilo 8-bit)
-  const cx = 22, cy = 15, r = 6;
-
-  // círculo “pixel” (disco)
+  // 4) Cockpit redonda (pixel)
   for (let yy = -r; yy <= r; yy++){
     const dx = Math.floor(Math.sqrt(r*r - yy*yy));
     px(g, cx - dx, cy + yy, dx*2 + 1, 1, body);
@@ -1624,6 +1651,7 @@ for (let f = 0; f < 2; f++){
   outline(g, "#0b1020");
   tie.push(c);
 }
+
 
 
   // Asteroides
