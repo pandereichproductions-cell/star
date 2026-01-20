@@ -11,7 +11,7 @@
       --fg:#e9eef7;
       --muted:#9aa7bd;
       --accent:#7dd3fc;
-      --laser:#ff4d4d;
+      --laser:rgb(70,255,0);
     }
     *{box-sizing:border-box}
    html, body{
@@ -1130,7 +1130,7 @@ function unlockAudio(){
 
 		// dispara desde el “frente” del TIE (lado izquierdo del sprite)
 		lasers.push({
-		  x: t.x - 10,
+		  x: t.x,
 		  y: t.y,
 		  vx, vy,
 		  w: 22,   // un pelín más largo
@@ -1236,9 +1236,6 @@ function unlockAudio(){
 }
 
 
-
-
-
 function draw(){
     ctx.clearRect(0,0,W,H);
 
@@ -1280,19 +1277,38 @@ function draw(){
       ctx.drawImage(spr, (t.x|0), ((t.y - t.h/2)|0), (t.w|0), (t.h|0));
     }
 
-    // láseres
-    for (const l of lasers){
-      // glow simple
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = getCSS("--laser");
-      ctx.fillRect((l.x|0)-2, ((l.y - 1)|0)-2, (l.w+4)|0, 6);
-      ctx.globalAlpha = 1;
+   for (const l of lasers){
 
-      ctx.fillStyle = getCSS("--laser");
-      ctx.fillRect(l.x|0, (l.y - 2)|0, l.w|0, 4);
-      ctx.fillStyle = "rgba(255,255,255,.35)";
-      ctx.fillRect((l.x+2)|0, (l.y - 1)|0, (l.w-6)|0, 2);
-    }
+	  // 🎲 radio variable del glow (flicker sutil)
+	  const r = 4 + Math.random()*2;
+
+	  // === GLOW redondeado ===
+	  ctx.save();
+	  ctx.globalAlpha = 0.35;
+	  ctx.fillStyle = getCSS("--laser");
+
+	  ctx.beginPath();
+	  ctx.roundRect(
+		(l.x|0) - 4,
+		((l.y - 1)|0) - 4,
+		(l.w + 8)|0,
+		10,
+		r        // 👈 aquí usas el radio variable
+	  );
+	  ctx.fill();
+	  ctx.restore();
+
+	  // === Cuerpo fino ===
+	  ctx.fillStyle = getCSS("--laser");
+	  ctx.fillRect(l.x|0, (l.y - 1)|0, l.w|0, 2);
+
+	  // === Núcleo blanco ===
+	  ctx.fillStyle = "rgba(255,255,255,.55)";
+	  ctx.fillRect((l.x + 2)|0, (l.y)|0, (l.w - 6)|0, 1);
+	}
+
+
+
 
     // Halcón
     drawFalcon();
@@ -1544,10 +1560,21 @@ for (let f = 0; f < 2; f++){
   const body = "#9ca3af";
   const dark = "#111827";
 
+  // Colores brazos 3D (más visibles)
+  const armTop = "#0f172a";            // “encima”
+  const armBot = "rgba(0,0,0,.55)";    // “debajo”
+  const armHi  = "rgba(255,255,255,.10)";
+
   // Alas hexagonales (más anchas para que no parezcan flechas)
   const WING_W = 16, WING_H = 18;
   const Lx = 0, Rx = 28, Wy = 6;
 
+  // === Brazo derecho “debajo” (dibujar ANTES de alas, y más abajo para que asome) ===
+  px(g, 26, 18, 6, 2, armBot);
+  px(g, 24, 17, 6, 2, armBot);
+  px(g, 25, 19, 4, 1, armHi);
+
+  // === Alas ===
   hexWingLR(g, Lx, Wy, WING_W, WING_H, wing);
   hexWingLR(g, Rx, Wy, WING_W, WING_H, wing);
 
@@ -1564,14 +1591,29 @@ for (let f = 0; f < 2; f++){
     px(g, Rx + dx, Wy + yy, ww, 1, "rgba(0,0,0,.22)");
   }
 
-  // Conectores hacia el cockpit (los “brazos”)
-  px(g, 14, 13, 6, 4, dark);
-  px(g, 24, 13, 6, 4, dark);
+  // === Brazo izquierdo “encima” (dibujar DESPUÉS de alas, y más arriba para que asome) ===
+  px(g, 12, 10, 6, 2, armTop);
+  px(g, 14, 11, 6, 2, armTop);
+  px(g, 13, 9, 4, 1, armHi);
 
-  // Cockpit
-  px(g, 18, 10, 8, 10, body);
-  px(g, 19, 11, 6, 8, "#6b7280");
-  px(g, 20, 13, 4, 4, "rgba(255,255,255,.10)");
+  // Cockpit (redonda, estilo 8-bit)
+  const cx = 22, cy = 15, r = 6;
+
+  // círculo “pixel” (disco)
+  for (let yy = -r; yy <= r; yy++){
+    const dx = Math.floor(Math.sqrt(r*r - yy*yy));
+    px(g, cx - dx, cy + yy, dx*2 + 1, 1, body);
+  }
+
+  // interior más oscuro
+  const r2 = 4;
+  for (let yy = -r2; yy <= r2; yy++){
+    const dx = Math.floor(Math.sqrt(r2*r2 - yy*yy));
+    px(g, cx - dx, cy + yy, dx*2 + 1, 1, "#6b7280");
+  }
+
+  // brillo pequeño
+  px(g, cx - 1, cy - 1, 2, 2, "rgba(255,255,255,.12)");
 
   // “Disparo” rojo en frame 2
   if (f === 1){
@@ -1580,8 +1622,9 @@ for (let f = 0; f < 2; f++){
   }
 
   outline(g, "#0b1020");
-  tie.push(c); // <- IMPORTANTÍSIMO: esto crea SPR.tie[0] y SPR.tie[1]
+  tie.push(c);
 }
+
 
   // Asteroides
   function makeAsteroidSprite(size, variant){
