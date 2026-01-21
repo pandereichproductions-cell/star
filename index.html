@@ -148,6 +148,148 @@
   canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
   canvas.addEventListener('touchmove',  (e) => e.preventDefault(), { passive: false });
 
+
+// ======= LETRAS PIXELADAS  ==========
+
+// --- Pixel text (bitmap 5x7) ---
+const PIX5x7 = {
+  " ": ["00000","00000","00000","00000","00000","00000","00000"],
+  "!": ["00100","00100","00100","00100","00100","00000","00100"],
+  ".": ["00000","00000","00000","00000","00000","00100","00100"],
+  ":": ["00000","00100","00100","00000","00100","00100","00000"],
+  "-": ["00000","00000","00000","11111","00000","00000","00000"],
+  "·": ["00000","00000","00000","00100","00000","00000","00000"], // punto medio
+  "/": ["00001","00010","00100","01000","10000","00000","00000"],
+
+  "0": ["01110","10001","10011","10101","11001","10001","01110"],
+  "1": ["00100","01100","00100","00100","00100","00100","01110"],
+  "2": ["01110","10001","00001","00010","00100","01000","11111"],
+  "3": ["11110","00001","00001","01110","00001","00001","11110"],
+  "4": ["00010","00110","01010","10010","11111","00010","00010"],
+  "5": ["11111","10000","11110","00001","00001","10001","01110"],
+  "6": ["00110","01000","10000","11110","10001","10001","01110"],
+  "7": ["11111","00001","00010","00100","01000","01000","01000"],
+  "8": ["01110","10001","10001","01110","10001","10001","01110"],
+  "9": ["01110","10001","10001","01111","00001","00010","01100"],
+
+  "A": ["01110","10001","10001","11111","10001","10001","10001"],
+  "B": ["11110","10001","10001","11110","10001","10001","11110"],
+  "C": ["01110","10001","10000","10000","10000","10001","01110"],
+  "D": ["11100","10010","10001","10001","10001","10010","11100"],
+  "E": ["11111","10000","10000","11110","10000","10000","11111"],
+  "F": ["11111","10000","10000","11110","10000","10000","10000"],
+  "G": ["01110","10001","10000","10111","10001","10001","01110"],
+  "H": ["10001","10001","10001","11111","10001","10001","10001"],
+  "I": ["01110","00100","00100","00100","00100","00100","01110"],
+  "J": ["00111","00010","00010","00010","00010","10010","01100"],
+  "K": ["10001","10010","10100","11000","10100","10010","10001"],
+  "L": ["10000","10000","10000","10000","10000","10000","11111"],
+  "M": ["10001","11011","10101","10101","10001","10001","10001"],
+  "N": ["10001","11001","10101","10011","10001","10001","10001"],
+  "O": ["01110","10001","10001","10001","10001","10001","01110"],
+  "P": ["11110","10001","10001","11110","10000","10000","10000"],
+  "Q": ["01110","10001","10001","10001","10101","10010","01101"],
+  "R": ["11110","10001","10001","11110","10100","10010","10001"],
+  "S": ["01111","10000","10000","01110","00001","00001","11110"],
+  "T": ["11111","00100","00100","00100","00100","00100","00100"],
+  "U": ["10001","10001","10001","10001","10001","10001","01110"],
+  "V": ["10001","10001","10001","10001","10001","01010","00100"],
+  "W": ["10001","10001","10001","10101","10101","10101","01010"],
+  "X": ["10001","10001","01010","00100","01010","10001","10001"],
+  "Y": ["10001","10001","01010","00100","00100","00100","00100"],
+  "Z": ["11111","00001","00010","00100","01000","10000","11111"],
+};
+
+function drawPixelText(ctx, text, x, y, scale, color, align="left"){
+  text = (text ?? "").toUpperCase();
+
+  // Acepta '¡' como '!' (por si lo usas en el mensaje)
+  text = text.replaceAll("¡","!");
+
+  const charW = 5, charH = 7, gap = 1;
+  const lineW = (charW + gap) * scale;
+
+  let startX = x;
+  if (align === "center"){
+    startX = x - Math.floor((text.length * lineW - gap*scale) / 2);
+  } else if (align === "right"){
+    startX = x - (text.length * lineW - gap*scale);
+  }
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  // --- DEBUG: hitboxes (tecla H) ---
+  let debugHitboxes = false;
+  ctx.fillStyle = color;
+
+  let cx = startX;
+  for (let i=0; i<text.length; i++){
+    const ch = text[i];
+    const glyph = PIX5x7[ch] || PIX5x7[" "];
+    for (let row=0; row<charH; row++){
+      const bits = glyph[row];
+      for (let col=0; col<charW; col++){
+        if (bits[col] === "1"){
+          ctx.fillRect(cx + col*scale, y + row*scale, scale, scale);
+        }
+      }
+    }
+    cx += lineW;
+  }
+  ctx.restore();
+}
+
+
+
+function drawPhaseMsgPixel(ctx, title, subtitle, y){
+  // Ajusta tamaño (scale) según lo grande que quieras el texto
+  const s1 = 4; // título
+  const s2 = 3; // subtítulo
+
+  // sombra (1px “pixel”)
+  drawPixelText(ctx, title,   W/2 + s1, y + s1, s1, "rgba(0,0,0,0.45)", "center");
+  drawPixelText(ctx, title,   W/2,      y,      s1, "#E8ECF8",         "center");
+
+  if (subtitle){
+    const y2 = y + (7*s1) + 10;
+    drawPixelText(ctx, subtitle, W/2 + s2, y2 + s2, s2, "rgba(0,0,0,0.45)", "center");
+    drawPixelText(ctx, subtitle, W/2,      y2,      s2, "rgba(232,236,248,0.85)", "center");
+  }
+}
+
+function centerPixelText(text, scale, yOffset, color){
+  // ajuste global vertical (sube todo el texto)
+  const GLOBAL_Y_SHIFT = -100;   // prueba -6, -8 o -10
+
+  const y = (H/2 + GLOBAL_Y_SHIFT + (yOffset|0)) | 0;
+
+  // sombra fina 1px
+  const sh = 1;
+
+  drawPixelText(
+    ctx,
+    text,
+    ((W/2)|0) + sh,
+    (y + sh)|0,
+    scale,
+    "rgba(0,0,0,0.45)",
+    "center"
+  );
+
+  drawPixelText(
+    ctx,
+    text,
+    (W/2)|0,
+    y,
+    scale,
+    color,
+    "center"
+  );
+}
+
+
+
 	// ===== AUDIO =====
 	let musicStarted = false;
 	let audioUnlocked = false;
@@ -317,10 +459,32 @@ function rockEdgeAt(ix){
 }
 
 function groundY(x){
-  const ix = Math.floor((x + worldX*0.60) / ROCK_STEP);  //0.35 es la velocidad del suelo
-  // “snap” por segmentos para que parezca roca/píxel, no ola suave
-  return GROUND_Y + rockEdgeAt(ix);
+  // Scroll del terreno (mismo factor que ya usas)
+  const scroll = worldX * 0.60;
+
+  // Índice "granular" para el serrucho/roca
+  const ix = Math.floor((x + scroll) / ROCK_STEP);
+
+  // --- Opción 3: macro-ondulación con mesetas ---
+  const WAVE_LEN = 520;  // 400–800 (más grande = ondas más largas)
+  const WAVE_AMP = 20;   // 16–30  (más grande = más ondulación)
+  const TERRACE  = 8;    // 4–8    (más grande = escalones más marcados)
+
+  // Onda larga
+  let wave = Math.sin((x + scroll) / WAVE_LEN) * WAVE_AMP;
+
+  // Convertir a "terrazas"
+  wave = Math.round(wave / TERRACE) * TERRACE;
+
+  // Combinar: base + granularidad + onda
+  let y = GROUND_Y + rockEdgeAt(ix) + wave;
+
+  // Snap final al pixel-grid del suelo (con LOW_SCALE=3 queda perfecto)
+  y = Math.round(y / LOW_SCALE) * LOW_SCALE;
+
+  return y;
 }
+
 
 // --- Suelo estilo meteorito: textura tileable con cráteres (pixel art) ---
 let groundTile = null;
@@ -385,243 +549,142 @@ function playCrash(){
 
 
 
-function buildGroundTile(){
-  groundTile = document.createElement("canvas");
-  groundTile.width = GROUND_TILE_W;
-  groundTile.height = GROUND_TILE_H;
-  const g = groundTile.getContext("2d");
-  g.imageSmoothingEnabled = false;
+// --- Suelo PIXEL REAL (simple, sin cráteres/rocas) ---
+const LOW_SCALE = 3; // 2-4: más bajo = más suave, más alto = más retro
+
+let lowW = Math.max(1, Math.floor(W / LOW_SCALE));
+let lowH = Math.max(1, Math.floor(H / LOW_SCALE));
+
+const groundLow = document.createElement("canvas");
+groundLow.width = lowW;
+groundLow.height = lowH;
+const gctx = groundLow.getContext("2d");
+gctx.imageSmoothingEnabled = false;
+
+let groundPatternLow = null;
+
+function ensureGroundLow(){
+  const nw = Math.max(1, Math.floor(W / LOW_SCALE));
+  const nh = Math.max(1, Math.floor(H / LOW_SCALE));
+  if (nw !== lowW || nh !== lowH){
+    lowW = nw; lowH = nh;
+    groundLow.width = lowW;
+    groundLow.height = lowH;
+    gctx.imageSmoothingEnabled = false;
+    groundPatternLow = null;
+  }
+  if (!groundPatternLow) buildGroundPatternLow();
+}
+
+function buildGroundPatternLow(){
+  const pat = document.createElement("canvas");
+  pat.width = 32;
+  pat.height = 32;
+  const p = pat.getContext("2d");
+  p.imageSmoothingEnabled = false;
 
   // base
-  g.fillStyle = G.base;
-  g.fillRect(0,0,GROUND_TILE_W,GROUND_TILE_H);
+  p.fillStyle = G.base;
+  p.fillRect(0,0,32,32);
 
-  // helper: dibuja también copias en bordes para que el tile “case”
-  const PAD = 28;
-  function wrapDraw(drawFn, x, y, a){
-    drawFn(x, y, a);
-    if (x < PAD) drawFn(x + GROUND_TILE_W, y, a);
-    if (x > GROUND_TILE_W - PAD) drawFn(x - GROUND_TILE_W, y, a);
-    if (y < PAD) drawFn(x, y + GROUND_TILE_H, a);
-    if (y > GROUND_TILE_H - PAD) drawFn(x, y - GROUND_TILE_H, a);
-
-    // esquinas
-    if (x < PAD && y < PAD) drawFn(x + GROUND_TILE_W, y + GROUND_TILE_H, a);
-    if (x < PAD && y > GROUND_TILE_H - PAD) drawFn(x + GROUND_TILE_W, y - GROUND_TILE_H, a);
-    if (x > GROUND_TILE_W - PAD && y < PAD) drawFn(x - GROUND_TILE_W, y + GROUND_TILE_H, a);
-    if (x > GROUND_TILE_W - PAD && y > GROUND_TILE_H - PAD) drawFn(x - GROUND_TILE_W, y - GROUND_TILE_H, a);
+  // dither / granulado
+  p.fillStyle = G.mid;
+  for (let i=0; i<140; i++){
+    p.fillRect((Math.random()*32)|0, (Math.random()*32)|0, 1, 1);
   }
 
-  // dithering / ruido pixel (seamless)
-  sprinkleNoise(g, GROUND_TILE_W, GROUND_TILE_H, G.mid, 0.060, PAD);
-  sprinkleNoise(g, GROUND_TILE_W, GROUND_TILE_H, G.deep, 0.040, PAD);
-
-  // micro-variación vertical MUY sutil (evita bandas duras)
-  g.globalAlpha = 0.08;
-  g.fillStyle = "#000";
-  g.fillRect(0, (GROUND_TILE_H*0.62)|0, GROUND_TILE_W, (GROUND_TILE_H*0.38)|0);
-  g.globalAlpha = 1;
-
-  // cráteres (algunos cruzan borde para continuidad)
-  for (let i=0;i<18;i++){
-    const x = (Math.random()*GROUND_TILE_W)|0;
-    const y = ((Math.random()*GROUND_TILE_H*0.88)+8)|0;
-    const r = (10 + Math.random()*34)|0;
-    wrapDraw((xx,yy,rr)=>drawCrater(g, xx, yy, rr), x, y, r);
+  // puntos más oscuros
+  p.fillStyle = G.deep;
+  for (let i=0; i<60; i++){
+    p.fillRect((Math.random()*32)|0, (Math.random()*32)|0, 1, 1);
   }
 
-  // rocas / aristas pequeñas (seamless)
-  for (let i=0;i<56;i++){
-    const x = (Math.random()*GROUND_TILE_W)|0;
-    const y = (Math.random()*GROUND_TILE_H)|0;
-    const s = 2 + (Math.random()*5)|0;
-    wrapDraw((xx,yy,ss)=>drawRock(g, xx, yy, ss), x, y, s);
+  // highlight sutil
+  p.fillStyle = "rgba(255,255,255,0.06)";
+  for (let i=0; i<40; i++){
+    p.fillRect((Math.random()*32)|0, (Math.random()*32)|0, 1, 1);
   }
 
-  // patrón repetible
-  groundPattern = ctx.createPattern(groundTile, "repeat");
+  groundPatternLow = gctx.createPattern(pat, "repeat");
 }
-
-function sprinkleNoise(g, w, h, col, density, pad=0){
-  g.fillStyle = col;
-  const n = (w*h*density)|0;
-  for (let i=0;i<n;i++){
-    const x = (Math.random()*w)|0;
-    const y = (Math.random()*h)|0;
-    g.fillRect(x,y,1,1);
-
-    // si queremos tile seamless, duplica puntos cerca de bordes
-    if (pad){
-      if (x < pad) g.fillRect(x+w, y, 1, 1);
-      if (x >= w-pad) g.fillRect(x-w, y, 1, 1);
-      if (y < pad) g.fillRect(x, y+h, 1, 1);
-      if (y >= h-pad) g.fillRect(x, y-h, 1, 1);
-
-      if (x < pad && y < pad) g.fillRect(x+w, y+h, 1, 1);
-      if (x < pad && y >= h-pad) g.fillRect(x+w, y-h, 1, 1);
-      if (x >= w-pad && y < pad) g.fillRect(x-w, y+h, 1, 1);
-      if (x >= w-pad && y >= h-pad) g.fillRect(x-w, y-h, 1, 1);
-    }
-  }
-}
-
-function drawPixelLine(g, x1,y1,x2,y2, col){
-  g.fillStyle = col;
-  x1|=0; y1|=0; x2|=0; y2|=0;
-  let dx = Math.abs(x2-x1), sx = x1<x2?1:-1;
-  let dy = -Math.abs(y2-y1), sy = y1<y2?1:-1;
-  let err = dx + dy;
-  while(true){
-    g.fillRect(x1,y1,1,1);
-    if (x1===x2 && y1===y2) break;
-    const e2 = 2*err;
-    if (e2 >= dy){ err += dy; x1 += sx; }
-    if (e2 <= dx){ err += dx; y1 += sy; }
-  }
-}
-
-function hash1(n){
-  // hash entero simple (determinista)
-  n = (n|0) ^ 0x9e3779b9;
-  n = (n ^ (n >>> 16)) * 0x7feb352d;
-  n = (n ^ (n >>> 15)) * 0x846ca68b;
-  return (n ^ (n >>> 16)) >>> 0;
-}
-
-function fillCirclePx(g, cx, cy, r, col){
-  g.fillStyle = col;
-  r |= 0;
-  for (let dy = -r; dy <= r; dy++){
-    const yy = (cy + dy) | 0;
-    const dx = (Math.sqrt(r*r - dy*dy) | 0);
-    const xx = (cx - dx) | 0;
-    g.fillRect(xx, yy, (dx*2 + 1)|0, 1);
-  }
-}
-
-function fillCirclePxJitter(g, cx, cy, r, col, seed){
-  // igual que fillCirclePx pero con borde “dentado” (pixel art)
-  g.fillStyle = col;
-  r |= 0;
-  for (let dy = -r; dy <= r; dy++){
-    const yy = (cy + dy) | 0;
-    const h = hash1((yy + seed*131) | 0);
-    const j = ((h % 3) - 1); // -1..+1
-    const rr = Math.max(2, r + j);
-    const dx = (Math.sqrt(rr*rr - dy*dy) | 0);
-    const xx = (cx - dx) | 0;
-    g.fillRect(xx, yy, (dx*2 + 1)|0, 1);
-  }
-}
-
-function drawCrater(g, x, y, r){
-  // Cráter “pixel art”: borde dentado + interior con sombra y highlight.
-  // Evita círculos suaves y negros puros.
-  const seed = hash1(((x|0) * 73856093) ^ ((y|0) * 19349663)) | 0;
-
-  // borde exterior (dentado)
-  fillCirclePxJitter(g, x, y, r, G.deep, seed);
-
-  // interior
-  fillCirclePx(g, x, y, Math.max(2, (r*0.78)|0), G.mid);
-
-  // sombra interior abajo-dcha (una “media luna” pixelada)
-  fillCirclePx(g, x + ((r*0.18)|0), y + ((r*0.18)|0), Math.max(2, (r*0.55)|0), G.base);
-
-  // highlight arriba-izq (bisel)
-  fillCirclePx(g, x - ((r*0.20)|0), y - ((r*0.20)|0), Math.max(2, (r*0.18)|0), G.hi);
-
-  // grietas pixeleadas (en tonos del suelo, no negro puro)
-  const crackCol = "rgba(11,16,32,.28)";
-  for (let k=0;k<3;k++){
-    const ang = ((hash1(seed + k*17) % 6283) / 1000); // 0..~6.283
-    const len = (r*0.55 + (hash1(seed + k*97) % (r*55))/100)|0;
-    const x2 = x + Math.cos(ang)*len;
-    const y2 = y + Math.sin(ang)*len;
-    drawPixelLine(g, x, y, x2, y2, crackCol);
-  }
-
-  // “chips” en el borde (pequeños pixels de highlight)
-  g.fillStyle = "rgba(255,255,255,.10)";
-  const chips = 2 + (seed % 3);
-  for (let i=0;i<chips;i++){
-    const ang = ((hash1(seed + i*101) % 6283) / 1000);
-    const rr = (r*0.85)|0;
-    const px = (x + Math.cos(ang)*rr)|0;
-    const py = (y + Math.sin(ang)*rr)|0;
-    g.fillRect(px, py, 1, 1);
-  }
-}
-
-function drawRock(g, x, y, s){
-  g.fillStyle = "rgba(0,0,0,.20)";
-  g.fillRect(x, y, s, s);
-  g.fillStyle = "rgba(255,255,255,.08)";
-  g.fillRect(x+1, y+1, Math.max(1,s-2), Math.max(1,s-2));
-  g.fillStyle = "rgba(255,255,255,.16)";
-  g.fillRect(x+1, y+1, 1, 1);
-}
-
-
-
 
 function drawPlanetSurface(){
-  // Asegura tile creado
-  if (!groundPattern) buildGroundTile();
+  ensureGroundLow();
+  gctx.clearRect(0, 0, lowW, lowH);
 
-  // Silueta del suelo (usa tu groundY para que coincida con colisión)
+  // MISMO scroll para contorno y relleno (evita “baile”)
+  const scrollPx = worldX * 0.60;
+  const snappedScrollPx = Math.floor(scrollPx / LOW_SCALE) * LOW_SCALE;
+  const oxLow = (snappedScrollPx / LOW_SCALE) | 0;
+
+  function groundYLocal(xPx){
+	  const ix = Math.floor((xPx + snappedScrollPx) / ROCK_STEP);
+
+	  // --- Macro ondulación con mesetas ---
+	  const WAVE_LEN = 520;   // cuanto más alto, más suave (400–800)
+	  const WAVE_AMP = 20;    // altura total de la ondulación (16–30)
+	  const TERRACE  = 8;     // tamaño de cada “escalón” (4–8)
+
+	  let wave = Math.sin((xPx + snappedScrollPx) / WAVE_LEN) * WAVE_AMP;
+
+	  // convierte la onda en terrazas (escalones)
+	  wave = Math.round(wave / TERRACE) * TERRACE;
+
+	  // suelo final
+	  let y = GROUND_Y + rockEdgeAt(ix) + wave;
+
+	  // snap final al grid pixel del suelo
+	  y = Math.round(y / LOW_SCALE) * LOW_SCALE;
+
+	  return y;
+}
+
+  function gyLow(xLow){
+    const xPx = xLow * LOW_SCALE;
+    return Math.floor(groundYLocal(xPx) / LOW_SCALE);
+  }
+
+  // silueta
+  gctx.beginPath();
+  gctx.moveTo(0, lowH);
+  gctx.lineTo(0, gyLow(0));
+  for (let x = 1; x <= lowW; x++){
+    gctx.lineTo(x, gyLow(x));
+  }
+  gctx.lineTo(lowW, lowH);
+  gctx.closePath();
+
+  // base
+  gctx.fillStyle = G.deep;
+  gctx.fill();
+
+  // textura
+  gctx.save();
+  gctx.clip();
+  gctx.translate(-oxLow, 0);
+  gctx.fillStyle = groundPatternLow;
+  gctx.fillRect(oxLow, 0, lowW + oxLow + 2, lowH);
+  gctx.restore();
+
+  // borde 1px + sombra
+  gctx.fillStyle = "rgba(150,160,178,.55)";
+  for (let x = 0; x <= lowW; x++){
+    const y = gyLow(x);
+    gctx.fillRect(x, y, 1, 1);
+  }
+  gctx.fillStyle = "rgba(0,0,0,.28)";
+  for (let x = 0; x <= lowW; x++){
+    const y = gyLow(x) + 1;
+    if (y < lowH) gctx.fillRect(x, y, 1, 1);
+  }
+
+  // upscale
   ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(0, H);
-  ctx.lineTo(0, groundY(0));
-  for (let x = 0; x <= W; x += 6){
-    ctx.lineTo(x, groundY(x));
-  }
-  ctx.lineTo(W, H);
-  ctx.closePath();
-
-  // Base (oscura) para dar profundidad
-  ctx.fillStyle = G.deep;
-  ctx.fill();
-
-  // Clip al suelo y rellena con textura que “corre” con el mundo
-  ctx.save();
-  ctx.clip();
-
-  // scroll suave: mismo factor que groundY (worldX*0.60)
-  const offX = ((worldX*0.60) % GROUND_TILE_W);
-  ctx.translate(-(offX|0), 0);
-
-  ctx.fillStyle = groundPattern;
-  // pintamos algo más ancho por el translate
-  ctx.fillRect(-GROUND_TILE_W, 0, W + GROUND_TILE_W*3, H);
-
-  ctx.restore(); // clip
-
-  // Borde superior (arista) + highlight, estilo meteorito
-  ctx.globalAlpha = 0.95;
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(150,160,178,.38)";
-  ctx.beginPath();
-  ctx.moveTo(0, groundY(0));
-  for (let x = 0; x <= W; x += 6){
-    ctx.lineTo(x, groundY(x));
-  }
-  ctx.stroke();
-
-  // finita sombra justo debajo del borde (da relieve)
-  ctx.globalAlpha = 0.35;
-  ctx.strokeStyle = "rgba(0,0,0,.25)";
-  ctx.beginPath();
-  ctx.moveTo(0, groundY(0)+2);
-  for (let x = 0; x <= W; x += 6){
-    ctx.lineTo(x, groundY(x)+2);
-  }
-  ctx.stroke();
-  ctx.globalAlpha = 1;
-
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(groundLow, 0, 0, lowW, lowH, 0, 0, W, H);
   ctx.restore();
 }
+
 
 
 // --- Estrellas (2 capas, más aleatorias) ---
@@ -679,6 +742,10 @@ function initStars(){
   // Fondo
   let worldX = 0;
 
+  //hitboxes
+  let debugHitboxes = false;
+
+
   // Estado
   let running = false;
   let gameOver = false;
@@ -725,7 +792,8 @@ function initStars(){
 
     worldX = 0;
     if (!starsFar.length) initStars();
-    if (!groundPattern) buildGroundTile();
+    ensureGroundLow();
+
 	 // ✅ limpiar FX
 	  particles.length = 0;
 	  shakeT = 0;
@@ -771,6 +839,13 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyR") {
 	e.preventDefault();
 	reset();
+  }
+
+
+  // Toggle hitboxes (H)
+  if (e.code === "KeyH") {
+    e.preventDefault();
+    debugHitboxes = !debugHitboxes;
   }
 }, { passive:false });
 
@@ -1236,6 +1311,74 @@ function unlockAudio(){
 }
 
 
+
+  function drawHitboxes(){
+    if (!debugHitboxes) return;
+
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = 0.95;
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(255, 225, 0, 0.95)"; // amarillo
+    ctx.setLineDash([]);
+
+    // Halcón: círculo principal
+    ctx.beginPath();
+    ctx.arc(ship.x, ship.y, ship.r, 0, Math.PI*2);
+    ctx.stroke();
+
+    // Halcón: AABB vs láser
+    const shipBox = { x: ship.x-20, y: ship.y-14, w: 40, h: 28 };
+    ctx.strokeRect(shipBox.x, shipBox.y, shipBox.w, shipBox.h);
+
+    // Halcón: AABB vs TIE
+    const shipHit = { x: ship.x-18, y: ship.y-12, w: 36, h: 24 };
+    ctx.strokeRect(shipHit.x, shipHit.y, shipHit.w, shipHit.h);
+
+    // Asteroides: círculo de colisión
+    for (const a of asteroids){
+      const r = (a.hitR ?? (a.r*0.92));
+      ctx.beginPath();
+      ctx.arc(a.x, a.y, r, 0, Math.PI*2);
+      ctx.stroke();
+    }
+
+    // TIE: hitbox ajustada (igual que colisión)
+    for (const t of ties){
+      const tieHit = { x: t.x+14, y: t.y-(t.h/2)+10, w: t.w-28, h: t.h-20 };
+      ctx.strokeRect(tieHit.x, tieHit.y, tieHit.w, tieHit.h);
+    }
+
+    // Láseres: AABB
+    for (const l of lasers){
+      const laserBox = { x: l.x, y: l.y - (l.h/2), w: l.w, h: l.h };
+      ctx.strokeRect(laserBox.x, laserBox.y, laserBox.w, laserBox.h);
+    }
+
+    ctx.restore();
+  }
+  
+  function drawGroundHitbox(){
+	  if (!debugHitboxes) return;
+
+	  ctx.save();
+	  ctx.strokeStyle = "rgba(255,255,0,0.9)";
+	  ctx.lineWidth = 1;
+	  ctx.beginPath();
+
+	  // Dibujamos la función groundY(x) pixel a pixel
+	  for (let x = 0; x <= W; x++){
+		const y = groundY(x) | 0;
+		if (x === 0) ctx.moveTo(x, y);
+		else ctx.lineTo(x, y);
+	  }
+
+	  ctx.stroke();
+	  ctx.restore();
+	}
+
+
+
 function draw(){
     ctx.clearRect(0,0,W,H);
 
@@ -1307,20 +1450,24 @@ function draw(){
 	  ctx.fillRect((l.x + 2)|0, (l.y)|0, (l.w - 6)|0, 1);
 	}
 
-
-
-
     // Halcón
     drawFalcon();
 
+
+    // Debug hitboxes (H)
+    drawHitboxes();
+	drawGroundHitbox(); 
+
     // UI
     if (!running){
-      centerText("FASE 1 · Campo de asteroides", 24, "rgba(233,238,247,.96)", -6);
-      centerText("Click o Espacio para empezar", 16, "rgba(154,167,189,.95)", 26);
+		centerPixelText("", 3, -12, "#E9EEF7");
+		centerPixelText("CLICK O ESPACIO PARA EMPEZAR", 2, 22, "rgba(154,167,189,.95)");
+
     }
     if (gameOver){
-      centerText("GAME OVER", 40, "rgba(255,255,255,.95)", -8);
-      centerText("Click/Espacio/R para reiniciar", 14, "rgba(154,167,189,.95)", 22);
+		centerPixelText("GAME OVER", 4, -14, "#FFFFFF");
+		centerPixelText("CLICK / ESPACIO / R PARA REINICIAR", 2, 22, "rgba(154,167,189,.95)");
+
     }
 
     // score grande
@@ -1352,7 +1499,7 @@ function draw(){
 		ctx.globalAlpha = 0.92 * a;
 		ctx.fillStyle = "rgba(0,0,0,0.22)";
 		//ctx.fillRect(0, (H/2 - 34)|0, W, 68);
-		centerText(phaseMsg, 26, "rgba(233,238,247,.98)", 0);
+		centerPixelText(phaseMsg, 3, 0, "#E9EEF7");
 		ctx.restore();
 	}
 	// ✅ MUY IMPORTANTE: volver al estado previo al shake
