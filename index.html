@@ -304,31 +304,60 @@ function centerPixelText(text, scale, yOffset, color){
 	let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
 	
 	async function initLaserWebAudio(){
-	  if (laserCtx) return;
+	  if (laserCtx) return true;
 
-	  laserCtx = new (window.AudioContext || window.webkitAudioContext)();
+	  // En file:// fetch de audio da CORS en Chrome/iOS; salimos sin audio
+	  if (location.protocol === "file:") return false;
 
-	  // Ganancia general para FX (laser + crash)
-	  sfxGain = laserCtx.createGain();
-	  sfxGain.gain.value = 0.75;
-	  sfxGain.connect(laserCtx.destination);
+	  try{
+		laserCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-	  // Ganancia específica del láser
-	  laserGain = laserCtx.createGain();
-	  laserGain.gain.value = 0.45;
-	  laserGain.connect(sfxGain);
+		// Ganancia general para FX (laser + crash)
+		sfxGain = laserCtx.createGain();
+		sfxGain.gain.value = 0.75;
+		sfxGain.connect(laserCtx.destination);
 
-	  const load = async (url) => {
-		const res = await fetch(url);
-		const arr = await res.arrayBuffer();
-		return await laserCtx.decodeAudioData(arr);
-	  };
+		// Ganancia específica del láser
+		laserGain = laserCtx.createGain();
+		laserGain.gain.value = 0.45;
+		laserGain.connect(sfxGain);
 
-	  // Cargamos ambos buffers (láser y explosión)
-	  [laserBuf, crashBuf] = await Promise.all([
-		load("audio/8-bit-laser.mp3"),
-		load("audio/8-bit-explosion.mp3")
-	  ]);
+		const load = async (url) => {
+		  try{
+			const res = await fetch(url, { cache: "no-store" });
+			if (!res.ok) throw new Error("HTTP " + res.status);
+			const arr = await res.arrayBuffer();
+			return await laserCtx.decodeAudioData(arr);
+		  } catch(e){
+			return null;
+		  }
+		};
+
+		// Cargamos ambos buffers (láser y explosión)
+		const bufs = await Promise.all([
+		  load("audio/8-bit-laser.mp3"),
+		  load("audio/8-bit-explosion.mp3")
+		]);
+
+		laserBuf = bufs[0];
+		crashBuf = bufs[1];
+
+		// Si no se pudo cargar nada, apagamos WebAudio para no dejar ctx “colgado”
+		if (!laserBuf && !crashBuf){
+		  try { await laserCtx.close(); } catch(e){}
+		  laserCtx = null;
+		  return false;
+		}
+
+		return true;
+	  } catch(e){
+		// Si algo falla, no dejamos el juego roto
+		try { if (laserCtx) await laserCtx.close(); } catch(_e){}
+		laserCtx = null;
+		laserBuf = null;
+		crashBuf = null;
+		return false;
+	  }
 	}
 
 
@@ -415,6 +444,24 @@ const scoreEl = document.getElementById("score");
 const bestEl  = document.getElementById("best");
 
 const W = canvas.width, H = canvas.height;
+
+// ========= Reset CANVAS ==========
+function resetLowCanvasesHard(){
+  // reset total del estado interno (clip/transform/etc)
+  groundLow.width = groundLow.width;
+  groundLow.height = groundLow.height;
+  gctx.imageSmoothingEnabled = false;
+
+  ceilingLow.width = ceilingLow.width;
+  ceilingLow.height = ceilingLow.height;
+  cctx.imageSmoothingEnabled = false;
+
+  // obliga a reconstruir el pattern
+  groundPatternLow = null;
+}
+
+
+
 
   // --- FX: explosión + shake ---
 const particles = [];
@@ -732,19 +779,19 @@ function buildGroundPatternLow(){
 
   // dither / granulado
   p.fillStyle = G.mid;
-  for (let i=0; i<140; i++){
+  for (let i=0; i<70; i++){
     p.fillRect((Math.random()*32)|0, (Math.random()*32)|0, 1, 1);
   }
 
   // puntos más oscuros
   p.fillStyle = G.deep;
-  for (let i=0; i<60; i++){
+  for (let i=0; i<30; i++){
     p.fillRect((Math.random()*32)|0, (Math.random()*32)|0, 1, 1);
   }
 
   // highlight sutil
   p.fillStyle = "rgba(255,255,255,0.06)";
-  for (let i=0; i<40; i++){
+  for (let i=0; i<18; i++){
     p.fillRect((Math.random()*32)|0, (Math.random()*32)|0, 1, 1);
   }
 
@@ -800,6 +847,7 @@ function drawCeilingSurface(){
   // textura (reusa groundPatternLow)
 	const oyLow = (Math.floor(ceilingOffsetY / LOW_SCALE)) | 0;
 	cctx.save();
+	cctx.setTransform(1,0,0,1,0,0); // ← evita acumulaciones raras en iOS
 	cctx.clip();
 	// scroll del pattern en X e Y (Y sigue el movimiento del techo)
 	cctx.translate(-oxLow, oyLow);
@@ -810,17 +858,26 @@ function drawCeilingSurface(){
 	cctx.restore();
 
 
-  // borde 1px + sombra
-  cctx.fillStyle = "rgba(150,160,178,.55)";
-  for (let x = 0; x <= lowW; x++){
-    const y = cyLow(x);
-    cctx.fillRect(x, y, 1, 1);
-  }
-  cctx.fillStyle = "rgba(0,0,0,.28)";
-  for (let x = 0; x <= lowW; x++){
-    const y = cyLow(x) - 1;
-    if (y >= 0) cctx.fillRect(x, y, 1, 1);
-  }
+ // techo: borde / rim-light
+	const step = 1; // o 2 para rendimiento
+	const w = step;
+
+	for (let x = 0; x <= lowW; x += step){
+	  const y = cyLow(x);
+
+	  // rim-light hacia el aire (ABAJO del borde)
+	  cctx.fillStyle = "rgba(60,120,220,0.35)";
+	  if (y + 1 < lowH) cctx.fillRect(x, y + 1, w, 1);
+
+	  cctx.fillStyle = "rgba(40,90,170,0.25)";
+	  if (y + 2 < lowH) cctx.fillRect(x, y + 2, w, 1);
+
+	  // borde claro (opcional)
+	  //cctx.fillStyle = "rgba(150,160,178,0.75)";
+	  //cctx.fillRect(x, y, w, 1);
+	}
+
+
 
   // upscale al canvas principal
   ctx.save();
@@ -884,6 +941,7 @@ function drawPlanetSurface(){
 	const oyLow = (Math.floor(floorOffsetY / LOW_SCALE)) | 0;
 
 	gctx.save();
+	gctx.setTransform(1,0,0,1,0,0); // ← evita acumulaciones raras en iOS
 	gctx.clip();
 
 	// scroll del pattern en X e Y (Y sigue el movimiento del suelo)
@@ -897,17 +955,26 @@ function drawPlanetSurface(){
 	gctx.restore();
 
 
-  // borde 1px + sombra
-  gctx.fillStyle = "rgba(150,160,178,.55)";
-  for (let x = 0; x <= lowW; x++){
-    const y = gyLow(x);
-    gctx.fillRect(x, y, 1, 1);
-  }
-  gctx.fillStyle = "rgba(0,0,0,.28)";
-  for (let x = 0; x <= lowW; x++){
-    const y = gyLow(x) + 1;
-    if (y < lowH) gctx.fillRect(x, y, 1, 1);
-  }
+  // borde + sombra (más visible)
+	const step = 1; // pon 1 si quieres máximo detalle //2
+	const w = step;
+
+	for (let x = 0; x <= lowW; x += step){
+	  const y = gyLow(x);
+
+	
+	// sombra hacia el aire (arriba del borde) — MÁS CONTRASTE
+	gctx.fillStyle = "rgba(60,120,220,0.35)"; // azul más luminoso
+	if (y - 1 >= 0) gctx.fillRect(x, y - 1, w, 1);
+
+	gctx.fillStyle = "rgba(40,90,170,0.25)";
+	if (y - 2 >= 0) gctx.fillRect(x, y - 2, w, 1);
+
+	  // borde claro
+	  //gctx.fillStyle = "rgba(150,160,178,0.75)";
+	  //gctx.fillRect(x, y, w, 1);
+	}
+
 
   // upscale
   ctx.save();
@@ -1005,6 +1072,9 @@ function initStars(){
 	  };
 	}
   function reset(){
+  
+	resetLowCanvasesHard();  // 🔥 FIX iOS
+	
     running = true;
     gameOver = false;
     score = 0;
@@ -1028,6 +1098,7 @@ function initStars(){
 
     worldX = 0;
     if (!starsFar.length) initStars();
+	
     ensureGroundLow();
 
 	 // ✅ limpiar FX
@@ -1299,30 +1370,39 @@ function unlockAudio(){
 
   audioUnlocked = true;
 
-  audioUnlockPromise = music.play().then(() => {
+  audioUnlockPromise = music.play().then(async () => {
     // Pausar si no toca música
     if (!musicStarted || !audioEnabled){
       music.pause();
       music.currentTime = 0;
     }
 
-    // 🔥 Precalentar FX HTMLAudio
-    laserPool.forEach(a => {
-      try { a.load(); } catch(e){}
-    });
-    try { sfxCrash.load(); } catch(e){}
+    // Si abrimos desde file://, evitamos intentos de carga que disparan CORS
+    const isFile = (location.protocol === "file:");
 
-    // 🔥🔥 AQUÍ VA EL PUNTO 3) 🔥🔥
-    initLaserWebAudio().then(() => {
-      if (laserCtx && laserCtx.state === "suspended") {
+    // 🔥 Precalentar FX HTMLAudio (solo si NO es file://)
+    if (!isFile){
+      laserPool.forEach(a => {
+        try { a.load(); } catch(e){}
+      });
+      try { sfxCrash.load(); } catch(e){}
+    }
+
+    // WebAudio FX (blindado)
+    try{
+      const ok = await initLaserWebAudio(); // devuelve true/false si aplicaste mi versión
+      if (ok && laserCtx && laserCtx.state === "suspended"){
         laserCtx.resume().catch(()=>{});
       }
-    });
+    } catch(e){
+      // no hacemos nada: sin audio pero el juego sigue
+    }
 
   }).catch(() => {});
 
   return audioUnlockPromise;
 }
+
 
 
 
@@ -1884,7 +1964,7 @@ function draw(){
 
 	  ctx.save();
 	  ctx.globalAlpha = canRestart ? 0.7 : 0.45;
-	  drawPixelText(ctx, "CLICK / ESPACIO PARA REINICIAR", cx, y, scHint, "#E9EEF7", "center");
+	  drawPixelText(ctx, "", cx, y, scHint, "#E9EEF7", "center");  //"CLICK / ESPACIO /R  PARA REINICIAR"
 	  ctx.restore();
 	}
 
