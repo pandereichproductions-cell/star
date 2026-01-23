@@ -160,6 +160,7 @@ const PIX5x7 = {
   "-": ["00000","00000","00000","11111","00000","00000","00000"],
   "·": ["00000","00000","00000","00100","00000","00000","00000"], // punto medio
   "/": ["00001","00010","00100","01000","10000","00000","00000"],
+    "%":["11001","11010","00100","01000","10110","00110","00000"],
 
   "0": ["01110","10001","10011","10101","11001","10001","01110"],
   "1": ["00100","01100","00100","00100","00100","00100","01110"],
@@ -288,6 +289,14 @@ function centerPixelText(text, scale, yOffset, color){
   );
 }
 
+
+// --- NUEVAS VARIABLES DE ESCUDO ---
+let shields = 2;       // 2 = Lleno, 1 = Dañado, 0 = Sin escudo
+let invulTimer = 0;    // Tiempo de gracia tras impacto
+// Aviso cuando pierdes un escudo (texto pixel)
+let shieldMsg = "";
+let shieldT = 0;
+let shieldDur = 0;
 
 
 	// ===== AUDIO =====
@@ -465,6 +474,10 @@ function resetLowCanvasesHard(){
 
   // --- FX: explosión + shake ---
 const particles = [];
+
+// --- FX extra: restos de asteroide y chatarra TIE (al chocar con escudo) ---
+const debris = [];    // trozos de asteroide
+const tieWrecks = []; // mitades de TIE
 let shakeT = 0;
 let shakeAmp = 0;
 let flashT = 0;
@@ -1075,6 +1088,11 @@ function initStars(){
   
 	resetLowCanvasesHard();  // 🔥 FIX iOS
 	
+	shields = 2;       // <--- Añadir esta línea
+    invulTimer = 0;    // <--- Añadir esta línea
+    shieldT = 0;
+    shieldMsg = "";
+	
     running = true;
     gameOver = false;
     score = 0;
@@ -1142,13 +1160,26 @@ function initStars(){
   }
   
   
-	  // DEBUG: forzar Fase 3 con la tecla "3"
-	window.addEventListener("keydown", e=>{
-	  if (e.key === "3" && !phase3 && !enteringPhase3){
-		beginPhase3();
-	  }
-	});
+	  // DEBUG: saltar rapido de fase con teclas "2" y "3"
+  window.addEventListener("keydown", e=>{
+    // Fase 2: desbloquea TIE Fighters
+    if (e.key === "2" && !phase3 && !enteringPhase3){
+      // Coloca el mundo justo despues del unlock y fuerza el aviso
+      worldX = Math.max(worldX, TIE_UNLOCK_DIST + 10);
+      // Reinicia temporizadores para que aparezcan pronto
+      tTie = 0;
+      nextTie = 0.08;
+      if (!phase2Shown){
+        phase2Shown = true;
+        showPhase("¡Peligro! TIE Fighters", 2.2);
+      }
+    }
 
+    // Fase 3: entrar en tunel/asteroide
+    if (e.key === "3" && !phase3 && !enteringPhase3){
+      beginPhase3();
+    }
+  });
 
 window.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
@@ -1300,6 +1331,198 @@ function spawnExplosion(x, y){
   flashT = 0.10;
 }
 
+function spawnMiniFX(x, y){
+  // chispas + humo, sin shake/flash (para impactos menores)
+  for (let i=0; i<10; i++){
+    const a = rand(0, Math.PI*2);
+    const sp = rand(140, 340);
+    particles.push({ x, y, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, life: rand(0.18, 0.38), r: rand(1.0, 2.0), type:"spark" });
+  }
+  for (let i=0; i<8; i++){
+    const a = rand(0, Math.PI*2);
+    const sp = rand(20, 90);
+    particles.push({ x: x + rand(-6,6), y: y + rand(-6,6), vx: Math.cos(a)*sp, vy: Math.sin(a)*sp, life: rand(0.35, 0.75), r: rand(3, 7), type:"smoke" });
+  }
+}
+
+// --- FX simple: trozos de asteroide volando ---
+function spawnAsteroidDebris(x, y, r){
+  const n = 7; // pocos trozos (barato)
+  for (let i=0; i<n; i++){
+    const a = rand(0, Math.PI*2);
+    const sp = rand(140, 320);
+    debris.push({
+      x, y,
+      vx: Math.cos(a)*sp,
+      vy: Math.sin(a)*sp,
+      r: rand(3, Math.max(4, r*0.22)),
+      rot: rand(0, Math.PI*2),
+      vr: rand(-10, 10),
+      life: rand(0.8, 1.35)
+    });
+  }
+}
+
+// --- FX simple: TIE partido en dos que cae al suelo ---
+function spawnTieWreck(x, y){
+  // dos trozos que salen despedidos en cualquier dirección y girando (más lento, sin "caída")
+  for (const side of [-1, 1]){
+    const ang = rand(0, Math.PI * 2);
+    const sp  = rand(140, 240); // más despacio
+    tieWrecks.push({
+      x, y,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      rot: rand(-Math.PI, Math.PI),
+      vr: rand(-6, 6),
+      side,
+      mark: (Math.random() < 0.5 ? -1 : 1),
+      life: 1.6
+    });
+  }
+  spawnMiniFX(x, y);
+}
+
+
+function updateDebrisAndWrecks(dt){
+  // trozos de asteroide
+  for (let i=debris.length-1; i>=0; i--){
+    const d = debris[i];
+    d.life -= dt;
+    if (d.life <= 0){ debris.splice(i,1); continue; }
+    d.vy += 650 * dt;              // gravedad suave
+    d.vx *= Math.pow(0.55, dt);     // freno
+    d.vy *= Math.pow(0.70, dt);
+    d.x += d.vx * dt;
+    d.y += d.vy * dt;
+    d.rot += d.vr * dt;
+    if (d.y > H + 80) { debris.splice(i,1); }
+  }
+
+
+  // restos de TIE: rebotan y giran por el espacio + estela simple
+  for (let i=tieWrecks.length-1; i>=0; i--){
+    const w = tieWrecks[i];
+    w.life -= dt;
+    if (w.life <= 0){ tieWrecks.splice(i,1); continue; }
+
+    // movimiento "espacial" con leve fricción
+    w.vx *= Math.pow(0.92, dt);
+    w.vy *= Math.pow(0.92, dt);
+    w.x += w.vx * dt;
+    w.y += w.vy * dt;
+    w.rot += w.vr * dt;
+
+
+    // estela: humo casi continuo + chispas ocasionales
+    if (Math.random() < dt * 10){
+      particles.push({
+        x: w.x + rand(-3,3),
+        y: w.y + rand(-3,3),
+        vx: rand(-35,35),
+        vy: rand(-35,35),
+        life: rand(0.30, 0.65),
+        r: rand(3, 7),
+        type: "smoke"
+      });
+    }
+    if (Math.random() < dt * 6){
+      const a = rand(0, Math.PI*2);
+      const sp = rand(120, 260);
+      particles.push({
+        x: w.x,
+        y: w.y,
+        vx: Math.cos(a)*sp,
+        vy: Math.sin(a)*sp,
+        life: rand(0.15, 0.32),
+        r: rand(1.0, 2.0),
+        type: "spark"
+      });
+    }
+  }
+}
+
+
+
+function hexPath(ctx, r, sy=1){
+  // Hexágono vertical (sy permite estirar en Y)
+  ctx.beginPath();
+  for (let i=0;i<6;i++){
+    const a = Math.PI/6 + i*(Math.PI/3); // 30º offset
+    const x = Math.cos(a)*r;
+    const y = Math.sin(a)*r*sy;
+    if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+  }
+  ctx.closePath();
+}
+
+function drawDebrisAndWrecks(){
+  // trozos de asteroide (cuadraditos/pedruscos)
+  for (const d of debris){
+    ctx.save();
+    ctx.translate(d.x, d.y);
+    ctx.rotate(d.rot);
+    ctx.globalAlpha = Math.max(0, Math.min(1, d.life / 1.2));
+    ctx.fillStyle = "rgba(140,150,165,1)";
+    const s = d.r;
+    ctx.fillRect(-s, -s, s*2, s*2);
+    // puntito más claro para dar relieve
+    ctx.globalAlpha *= 0.55;
+    ctx.fillStyle = "rgba(210,220,235,1)";
+    ctx.fillRect(-s*0.35, -s*0.35, s*0.55, s*0.55);
+    ctx.restore();
+  }
+
+  // restos de TIE (paneles hexagonales simples)
+  for (const w of tieWrecks){
+    ctx.save();
+    ctx.translate(w.x, w.y);
+    ctx.rotate(w.rot);
+
+    const a = Math.max(0, Math.min(1, w.life / 1.6));
+    ctx.globalAlpha = a;
+
+    // panel hex (ala)
+    ctx.fillStyle = "rgba(125,130,140,1)";
+    ctx.strokeStyle = "rgba(210,220,235,0.65)";
+    ctx.lineWidth = 2;
+
+    // el hex se dibuja ligeramente "alto" para parecerse al sprite
+    const r = 11;
+    const sy = 1.08;
+
+    hexPath(ctx, r, sy);
+    ctx.fill();
+
+    // borde fino
+    ctx.globalAlpha = a * 0.9;
+    hexPath(ctx, r, sy);
+    ctx.stroke();
+
+    // detalle interior (cruz/lineas) estilo TIE, muy simple
+    ctx.globalAlpha = a * 0.75;
+    ctx.beginPath();
+    ctx.moveTo(-r*0.55, 0);
+    ctx.lineTo( r*0.55, 0);
+    ctx.moveTo(0, -r*0.55*sy);
+    ctx.lineTo(0,  r*0.55*sy);
+    ctx.stroke();
+
+    // puntito luminoso (da vida)
+    ctx.globalAlpha = a * 0.55;
+    ctx.fillStyle = "rgba(235,240,250,1)";
+    ctx.fillRect(-1.5, -1.5, 3, 3);
+    // notch asimétrico para que la rotación se note
+    ctx.globalAlpha = a * 0.7;
+    ctx.fillStyle = "rgba(35,38,45,1)";
+    const notchX = r * 0.78 * (w.mark || 1);
+    ctx.fillRect(notchX - 2, -2, 4, 4);
+
+    ctx.restore();
+  }
+}
+
+
 function updateParticles(dt){
   for (let i=particles.length-1; i>=0; i--){
     const p = particles[i];
@@ -1417,7 +1640,9 @@ function unlockAudio(){
     gameOver = true;
 	phaseT = 0;
 	phaseMsg = "";
-    const s = Math.floor(score);
+	shieldT = 0;
+	shieldMsg = "";
+    const s = Math.floor(score) *10;
     if (s > best){
       best = s;
       localStorage.setItem("falcon_run_best", String(best));
@@ -1427,6 +1652,15 @@ function unlockAudio(){
 	restartTimer = 1.2;   // segundos que debe verse la explosión
 
   }
+  // Aviso pixel al perder un escudo
+  function showShieldLoss(){
+    // shields ya viene decrementado en las colisiones
+    shieldMsg = (shields > 0) ? "ESCUDOS 50%" : "ESCUDOS 0%";
+    shieldDur = 1.5; // segundos
+    shieldT = shieldDur;
+  }
+
+
   
   function beginPhase3(){
   enteringPhase3 = true;
@@ -1504,8 +1738,11 @@ function maybeEnterPhase3(){
 
   function update(dt){
 	//updateParticles(dt);
+	updateDebrisAndWrecks(dt);
 	// timer avisos de fase
 	if (phaseT > 0) phaseT = Math.max(0, phaseT - dt);
+	// timer aviso escudo
+	if (shieldT > 0) shieldT = Math.max(0, shieldT - dt);
     if (!running) return;
 
     // Dificultad suave
@@ -1616,11 +1853,17 @@ function maybeEnterPhase3(){
 	}
 
 
-
-
     // Mover asteroides
     for (let i=asteroids.length-1;i>=0;i--){
       const a = asteroids[i];
+
+      // Si ha sido destruido (choque con escudo), lo quitamos con FX
+      if (a.dead){
+        spawnAsteroidDebris(a.x, a.y, a.r);
+        asteroids.splice(i,1);
+        continue;
+      }
+
       a.x -= a.vx * dt;
       a.a += a.spin * dt;
 
@@ -1636,6 +1879,13 @@ function maybeEnterPhase3(){
     // Mover TIE + disparar
     for (let i=ties.length-1;i>=0;i--){
       const t = ties[i];
+      // Si ha sido destruido (choque con escudo), lo quitamos con FX
+      if (t.dead){
+        spawnTieWreck(t.x, t.y);
+        ties.splice(i,1);
+        continue;
+      }
+
       t.x -= t.vx * dt;
 
       // score por esquivar TIE (cuando pasa)
@@ -1679,31 +1929,80 @@ function maybeEnterPhase3(){
       l.y += l.vy * dt;
       l.life -= dt;
 
+      // colisión vs nave (solo aquí, para no mover 2 veces)
+      const shipBox = { x: ship.x - 20, y: ship.y - 14, w: 40, h: 28 };
+      const laserBox = { x: l.x, y: l.y - (l.h / 2), w: l.w, h: l.h };
+
+      if (aabb(shipBox, laserBox)) {
+        if (invulTimer <= 0) {
+          if (shields > 0) {
+            shields--;
+            showShieldLoss();
+            invulTimer = 60; // ~1s (frames)
+            // pequeño FX (sin shake)
+            spawnMiniFX(ship.x, ship.y);
+            // el láser se consume al impactar
+            lasers.splice(i,1);
+            continue;
+          } else {
+            crash();
+            return;
+          }
+        } else {
+          // invulnerable: consume el láser para evitar "metralleta" visual
+          lasers.splice(i,1);
+          continue;
+        }
+      }
+
       // fuera
       if (l.life <= 0 || l.x < -200 || l.y < -60 || l.y > H+60) {
         lasers.splice(i,1);
         continue;
       }
+	 }
 
-      // colisión láser vs nave (AABB contra una caja del halcón)
-      const shipBox = { x: ship.x-20, y: ship.y-14, w: 40, h: 28 };
-      const laserBox = { x: l.x, y: l.y - (l.h/2), w: l.w, h: l.h };
-      if (aabb(shipBox, laserBox)) { crash(); return; }
-    }
 
-    // Colisión nave vs asteroides (círculo)
-    for (const a of asteroids){
-      if (circleHit(ship.x, ship.y, ship.r, a.x, a.y, (a.hitR ?? (a.r*0.92)))){
-        crash(); return;
+    // --- 2. Colisión NAVE vs ASTEROIDES ---
+    for (const a of asteroids) {
+      if (circleHit(ship.x, ship.y, ship.r, a.x, a.y, (a.hitR ?? (a.r * 0.92)))) {
+        if (invulTimer <= 0) {
+          if (shields > 0) {
+            shields--;
+            showShieldLoss();
+            invulTimer = 60;
+            if (window.sfxCrash) sfxCrash.play();
+            a.dead = true; 
+          } else {
+            crash(); 
+            return;
+          }
+        }
       }
     }
 
-    // Colisión nave vs TIE (hitbox ajustada)
-    const shipHit = { x: ship.x-18, y: ship.y-12, w: 36, h: 24 };
-    for (const t of ties){
-      const tieHit = { x: t.x+14, y: t.y-(t.h/2)+10, w: t.w-28, h: t.h-20 };
-      if (aabb(shipHit, tieHit)) { crash(); return; }
+    // --- 3. Colisión NAVE vs TIE ---
+    const shipHit = { x: ship.x - 18, y: ship.y - 12, w: 36, h: 24 };
+    for (const t of ties) {
+      const tieHit = { x: t.x + 14, y: t.y - (t.h / 2) + 10, w: t.w - 28, h: t.h - 20 };
+      if (aabb(shipHit, tieHit)) {
+        if (invulTimer <= 0) {
+          if (shields > 0) {
+            shields--;
+            showShieldLoss();
+            invulTimer = 60;
+            if (window.sfxCrash) sfxCrash.play();
+            t.dead = true; 
+          } else {
+            crash(); 
+            return;
+          }
+        }
+      }
     }
+
+    // Importante: bajar el contador de invulnerabilidad fuera de los bucles
+    if (invulTimer > 0) invulTimer--;
 
     // actualizar score mostrado aunque sumemos fracciones por asteroides
     scoreEl.textContent = String(Math.floor(score));
@@ -1974,9 +2273,9 @@ function draw(){
    // score pixel pequeño (arriba a la izquierda, translúcido)
 	if (running && !gameOver){
 	  const label = "SCORE:";
-	  const value = String(Math.floor(score));
+	  const value = String(Math.floor(score)*10);
 
-	  const scale = 4;      // tamaño pixel
+	  const scale = 2;      // tamaño pixel
 	  const x = 14;         // margen izquierdo
 	  const y = 12;         // margen superior
 
@@ -2001,6 +2300,7 @@ function draw(){
 
 	
 	drawParticles();
+	drawDebrisAndWrecks();
 
 	// Aviso de fase (aparece y se desvanece)
 	if (!gameOver && phaseT > 0 && phaseMsg){
@@ -2020,6 +2320,27 @@ function draw(){
 		centerPixelText(phaseMsg, 3, 0, "#E9EEF7");
 		ctx.restore();
 	}
+
+	// Aviso de escudo (aparece, parpadea y se desvanece)
+	if (!gameOver && shieldT > 0 && shieldMsg){
+		const tLeft = shieldT;
+		const t = shieldDur - tLeft;          // tiempo transcurrido desde que empezó el aviso
+		const fade = 0.20;
+		let a = 1;
+		if (t < fade) a = t / fade;
+		else if (tLeft < fade) a = tLeft / fade;
+		a = Math.max(0, Math.min(1, a));
+
+		// Parpadeo: 8 Hz (ajusta si quieres más/menos rápido)
+		const blinkOn = (Math.floor(t * 8) % 2) === 0;
+		if (blinkOn){
+			ctx.save();
+			ctx.globalAlpha = 0.95 * a;
+			centerPixelText(shieldMsg, 2.6, -56, "#FFD166");
+			ctx.restore();
+		}
+	}
+
 	// ✅ MUY IMPORTANTE: volver al estado previo al shake
 	ctx.restore();
 
@@ -2031,59 +2352,83 @@ function drawFalcon(){
   ctx.translate((ship.x|0), (ship.y|0));
   ctx.rotate(ship.rot);
 
-  // --- Motor: arco azul pegado a la parte trasera (sin pluma) ---
-  // Intensidad: se "enciende" con cada clic y decae suavemente
-  const pulse = ship.engineFlash ? 1.0 : 0.15;
+  // --- 1. ESCUDO (DEBAJO DE TODO - DOBLE CÍRCULO GLOW) ---
+  if (shields > 0) {
+    ctx.save();
+    if (invulTimer > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+      ctx.globalAlpha = 0.3;
+    }
+    
+    ctx.globalCompositeOperation = "lighter";
+    const xPos = -12; // Desplazado a la izquierda
+    
+    // COLORES SEGÚN NIVEL DE ESCUDO
+    // Nivel 2: Cian y Blanco / Nivel 1: Naranja y Dorado
+    const colorOut = (shields === 2) ? "rgba(0, 212, 255, 0.15)" : "rgba(255, 120, 0, 0.15)";
+    const colorIn  = (shields === 2) ? "rgba(224, 251, 255, 0.3)"  : "rgba(255, 230, 150, 0.3)";
+    const glowColor = (shields === 2) ? "#00d4ff" : "#ffbd45";
 
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
+    // CÍRCULO EXTERIOR (Más grande y difuso)
+    ctx.shadowBlur = 45;
+    ctx.shadowColor = glowColor;
+    ctx.beginPath();
+    ctx.arc(xPos, 0, 42, 0, Math.PI * 2);
+    ctx.fillStyle = colorOut;
+    ctx.fill();
 
-  // Centro del arco (en coords locales del Falcon)
-  const gx = -19, gy = 0;
-  const r  = 30;
+    // CÍRCULO INTERIOR (Más pequeño y brillante)
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(xPos, 0, 36, 0, Math.PI * 2);
+    ctx.fillStyle = colorIn;
+    ctx.fill();
 
-  // Glow exterior
-  ctx.lineCap = "round";
-  ctx.shadowColor = `rgba(70, 210, 255, ${0.85*pulse})`;
-  ctx.shadowBlur  = 22 * pulse;
+    ctx.restore();
+  }
 
-  const grad = ctx.createRadialGradient(gx, gy, 2, gx, gy, r + 10);
-  grad.addColorStop(0.00, `rgba(255,255,255, ${0.70*pulse})`);
-  grad.addColorStop(0.35, `rgba(120,235,255, ${0.55*pulse})`);
-  grad.addColorStop(0.70, `rgba(0,160,255, ${0.35*pulse})`);
-  grad.addColorStop(1.00, `rgba(0,110,255, 0)`);
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = 7;
+  // --- 2. MOTOR (ENCIMA DEL ESCUDO, DEBAJO DE LA NAVE) ---
+  const pulse = ship.engineFlash ? 1.0 : 0.0; 
+  if (pulse > 0) { 
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const gx = -14, gy = 0, r = 31; 
+    ctx.shadowColor = "#00d4ff";
+    ctx.shadowBlur = 55; 
+    const grad = ctx.createRadialGradient(gx, gy, 0, gx, gy, r + 20);
+    grad.addColorStop(0.00, `rgba(255, 255, 255, 0.9)`);
+    grad.addColorStop(0.20, `rgba(130, 240, 255, 0.9)`);
+    grad.addColorStop(0.50, `rgba(0, 100, 255, 0.4)`);
+    grad.addColorStop(1.00, `rgba(0, 50, 255, 0)`);
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 15; 
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(gx, gy, r, Math.PI * 0.8, Math.PI * 1.2);
+    ctx.stroke();
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+    ctx.stroke();
+    ctx.restore();
+  }
 
-  // Arco (mitad izquierda) para "abrazar" la trasera redondeada
-  ctx.beginPath();
-  ctx.arc(gx, gy, r, Math.PI*0.64, Math.PI*1.36);
-  ctx.stroke();
-
-  // Núcleo más brillante, más fino
-  ctx.shadowBlur = 10 * pulse;
-  ctx.strokeStyle = `rgba(190,245,255, ${0.95*pulse})`;
-  ctx.lineWidth = 3;
-
-  ctx.beginPath();
-  ctx.arc(gx+0.5, gy, r-1.5, Math.PI*0.64, Math.PI*1.36);
-  ctx.stroke();
-
-  ctx.restore();
-
-
+  // --- 3. DIBUJO DE LA NAVE (ENCIMA DE TODO) ---
   if (falconReady){
-    ctx.imageSmoothingEnabled = false; // pixel perfecto
-
-    const scale = 1.15; // AJUSTA tamaño aquí
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    const scale = 1.15;
     const w = falconImg.width  * scale;
     const h = falconImg.height * scale;
-
+    if (shields <= 0 && invulTimer > 0 && Math.floor(Date.now() / 50) % 2 === 0) {
+       ctx.globalAlpha = 0.4;
+    }
     ctx.drawImage(falconImg, (-w/2)|0, (-h/2)|0, w|0, h|0);
+    ctx.restore();
   }
 
   ctx.restore();
 }
+
+
 
   // --- Fondo ---
   function drawStarsLayer(stars, parallax, baseAlpha){
@@ -2198,116 +2543,130 @@ function makeSprites(){
   }
 
 
-// TIE (2 frames) — alas hexagonales tipo película
+// TIE (2 frames) — alas = mismo hex que los trozos
 const tie = [];
 
-// Hexágono con caras planas arriba/abajo y recorte en los laterales
-function hexWingLR(g, x, y, w, h, color){
-  const inset = Math.max(3, Math.round(h * 0.22)); // ~4 si h=18
-  const mid = (h - 1) * 0.5;
+// 1) Helper: hex estilo "trozo" (MISMA receta visual que tus wrecks)
+function tieHexLikeWreck(g, cx, cy, r){
+  g.save();
+  g.translate(cx, cy);
+  // ❌ NO rotamos aquí: ya usamos offset en el ángulo (evita doble rotación)
 
-  g.fillStyle = color;
-
-  for (let yy = 0; yy < h; yy++){
-    const t  = Math.abs(yy - mid) / mid; // 0 centro, 1 bordes
-    const dx = Math.round(inset * t);    // más recorte arriba/abajo
-    const x0 = x + dx;
-    const ww = w - 2*dx;
-    if (ww > 0) g.fillRect(x0, y + yy, ww, 1);
+  // Hex (flat-top: lado arriba)
+  g.beginPath();
+  for (let i = 0; i < 6; i++){
+    const ROT = Math.PI / 3; // 30° + 60° = 90° total
+	const a = ROT + i * (Math.PI / 3);
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r;
+    if (i === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
   }
+  g.closePath();
+
+  // Relleno (ala oscura)
+  g.fillStyle = "#3a3f46";
+  g.fill();
+
+  // Borde
+  g.strokeStyle = "#7d828c";
+  g.lineWidth = 2;
+  g.stroke();
+
+  // Radios interiores: mismo color que el borde (centro -> 6 vértices)
+  g.strokeStyle = "#7d828c";
+  g.lineWidth = 1;
+  g.beginPath();
+  for (let i = 0; i < 6; i++){
+    const a = Math.PI / 6 + i * (Math.PI / 3);
+    g.moveTo(0, 0);
+    g.lineTo(Math.cos(a) * r * 0.78, Math.sin(a) * r * 0.78);
+  }
+  g.stroke();
+
+  // Puntito central
+  g.fillStyle = "rgba(255,255,255,0.14)";
+  g.fillRect(0, 0, 1, 1);
+
+  // Notch asimétrico
+  g.fillStyle = "rgba(0,0,0,0.22)";
+  g.fillRect((r*0.40)|0, (-r*0.55)|0, 2, 1);
+
+  g.restore();
 }
 
-// Línea pixel (Bresenham) para brazos
-function linePx(g, x0, y0, x1, y1, color){
-  x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0;
-  let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-  let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-  let err = dx + dy;
+// 2) Helper: brazo tubo simple (más ancho) + highlight
+function tube(g, x0, y0, x1, y1){
+  // Tronco (más ancho)
+  g.strokeStyle = "rgba(0,0,0,0.55)";
+  g.lineWidth = 4;
+  g.beginPath();
+  g.moveTo(x0, y0);
+  g.lineTo(x1, y1);
+  g.stroke();
 
-  while (true){
-    px(g, x0, y0, 1, 1, color);
-    if (x0 === x1 && y0 === y1) break;
-    const e2 = 2 * err;
-    if (e2 >= dy){ err += dy; x0 += sx; }
-    if (e2 <= dx){ err += dx; y0 += sy; }
-  }
-}
-
-// Brazo tipo “tubo” 2px + highlight opcional
-function arm(g, x0, y0, x1, y1, col, hiCol){
-  linePx(g, x0, y0,   x1, y1,   col);
-  linePx(g, x0, y0+1, x1, y1+1, col);
-  if (hiCol) linePx(g, x0, y0-1, x1, y1-1, hiCol);
+  // Highlight (1px)
+  g.strokeStyle = "rgba(255,255,255,0.10)";
+  g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(x0, y0-1);
+  g.lineTo(x1, y1-1);
+  g.stroke();
 }
 
 for (let f = 0; f < 2; f++){
   const [c,g] = mk(44, 30);
   g.clearRect(0, 0, 44, 30);
 
-  const wing = "#374151";
-  const body = "#9ca3af";
+  // --- Layout ---
+  const cx = 22, cy = 15;
 
-  // Colores brazos 3D
-  const armTop = "#0f172a";            // “encima”
-  const armBot = "rgba(0,0,0,.55)";    // “debajo”
-  const armHi  = "rgba(255,255,255,.10)";
+  // Alas (cruce sutil para efecto 3D)
+  const wingR = 9;
+  const Lcx = 10, Lcy = 15;   // ala izq un poco a la derecha (DETRÁS)
+  const Rcx = 34, Rcy = 15;   // ala der un poco a la izquierda (DELANTE)
 
-  // Alas
-  const WING_W = 16, WING_H = 18;
-  const Lx = 0, Rx = 28, Wy = 6;
+  // Cabina (dos círculos)
+  const rOut = 6;
+  const rIn  = 4;
 
-  // Cockpit (centro y radio)
-  const cx = 22, cy = 15, r = 6;
+  // =========================
+  // 1) IZQUIERDA DETRÁS
+  // =========================
+  
+    // ala izq detrás
+  tieHexLikeWreck(g, Lcx, Lcy, wingR);
+  // brazo izq detrás (más abajo)
+  tube(g, cx - rOut + 1, cy - 0, Lcx -1, Lcy -1);
 
-  // Centros geométricos de alas
-  const Lcx = (Lx + (WING_W/2))|0;       // 8
-  const Rcx = (Rx + (WING_W/2))|0;       // 36
-  const Wcy = (Wy + (WING_H/2))|0;       // 15
 
-  // Puntos de salida en el borde del cockpit
-  const leftEdgeX  = cx - r;            // 16
-  const rightEdgeX = cx + r;            // 28
-
-  // 1) Brazo derecho “debajo” (antes de alas)
-  arm(g, rightEdgeX, cy + 2, Rcx, Wcy + 2, armBot, null);
-
-  // 2) Alas hexagonales
-  hexWingLR(g, Lx, Wy, WING_W, WING_H, wing);
-  hexWingLR(g, Rx, Wy, WING_W, WING_H, wing);
-
-  // Paneles internos siguiendo la misma geometría del hexágono
-  const insetWing = Math.max(3, Math.round(WING_H * 0.22));
-  const mid = (WING_H - 1) * 0.5;
-
-  for (let yy = 2; yy < WING_H - 2; yy += 3){
-    const t  = Math.abs(yy - mid) / mid;
-    const dx = Math.round(insetWing * t);
-    const ww = WING_W - 2*dx;
-
-    px(g, Lx + dx, Wy + yy, ww, 1, "rgba(0,0,0,.22)");
-    px(g, Rx + dx, Wy + yy, ww, 1, "rgba(0,0,0,.22)");
+  // =========================
+  // 2) COCKPIT EN MEDIO
+  // =========================
+  // exterior
+  for (let yy = -rOut; yy <= rOut; yy++){
+    const dx = Math.floor(Math.sqrt(rOut*rOut - yy*yy));
+    px(g, cx - dx, cy + yy, dx*2 + 1, 1, "#9ca3af");
   }
-
-  // 3) Brazo izquierdo “encima” (después de alas)
-  arm(g, leftEdgeX, cy - 2, Lcx, Wcy - 2, armTop, armHi);
-
-  // 4) Cockpit redonda (pixel)
-  for (let yy = -r; yy <= r; yy++){
-    const dx = Math.floor(Math.sqrt(r*r - yy*yy));
-    px(g, cx - dx, cy + yy, dx*2 + 1, 1, body);
-  }
-
-  // interior más oscuro
-  const r2 = 4;
-  for (let yy = -r2; yy <= r2; yy++){
-    const dx = Math.floor(Math.sqrt(r2*r2 - yy*yy));
+  // interior
+  for (let yy = -rIn; yy <= rIn; yy++){
+    const dx = Math.floor(Math.sqrt(rIn*rIn - yy*yy));
     px(g, cx - dx, cy + yy, dx*2 + 1, 1, "#6b7280");
   }
-
-  // brillo pequeño
+  // brillo
   px(g, cx - 1, cy - 1, 2, 2, "rgba(255,255,255,.12)");
 
-  // “Disparo” rojo en frame 2
+  // =========================
+  // 3) DERECHA DELANTE
+  // =========================
+  
+    // brazo der delante (ligeramente más alto para “por delante”)
+  tube(g, cx + rOut - 1, cy + 0, Rcx - 1, Rcy + 0);
+  // ala der delante
+  tieHexLikeWreck(g, Rcx, Rcy, wingR);
+
+
+  // Disparo rojo en frame 2
   if (f === 1){
     px(g, 17, 15, 2, 1, "rgba(255,77,77,.75)");
     px(g, 25, 15, 2, 1, "rgba(255,77,77,.75)");
@@ -2316,6 +2675,8 @@ for (let f = 0; f < 2; f++){
   outline(g, "#0b1020");
   tie.push(c);
 }
+
+
 
 
 
