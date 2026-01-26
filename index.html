@@ -24,18 +24,23 @@
 	body{
 	  margin:0;
 	  min-height: var(--appH, 100dvh);
-	  padding-bottom: env(safe-area-inset-bottom);
-
 	  display:grid;
 	  place-items:center;
-
 	  background:radial-gradient(1100px 650px at 25% 10%, #1a2a55 0%, var(--bg1) 60%, #02030a 100%);
 	  color:var(--fg);
 	  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
 	  overflow:hidden;
 	}
 
-    .wrap{ width:min(980px, 96vw); user-select:none; }
+    .wrap{
+	  width:min(980px, 96vw);
+	  user-select:none;
+
+	  /* safe area iPhone */
+	  padding-bottom: env(safe-area-inset-bottom);
+	  padding-top: env(safe-area-inset-top); /* opcional pero recomendable */
+	}
+	
     .hud{
       display:flex; align-items:center; justify-content:space-between; gap:12px;
       margin:0 0 10px 0; color:var(--muted); font-size:14px;
@@ -94,8 +99,8 @@
   </style>
 </head>
 <body>
-  <div class="wrap">
-   <div class="hud">
+  <div class="wrap" id="app">
+  <div class="hud" id="hud">
 	  <div class="pill">
 		<span class="dot"></span>
 		<span>Impulso con <b>Espacio</b> o <b>Click</b></span>
@@ -115,45 +120,81 @@
 <script>
 (() => {
 
-   const canvas = document.getElementById("c");
+ const canvas = document.getElementById("c");
+const app = document.getElementById("app");
+const hud = document.getElementById("hud");
 
-  // === FIT REAL EN iOS (que se vea ENTERO en landscape) ===
-  const BASE_W = 960, BASE_H = 440;
+const BASE_W = 960;
+const BASE_H = 440;
 
-  function getVisibleSize(){
-    const vv = window.visualViewport;
-    const w = Math.floor(vv ? vv.width  : window.innerWidth);
-    const h = Math.floor(vv ? vv.height : window.innerHeight);
-    return { w, h };
-  }
+function getVisibleSize(){
+  const vv = window.visualViewport;
+  return {
+    w: Math.floor(vv ? vv.width  : window.innerWidth),
+    h: Math.floor(vv ? vv.height : window.innerHeight)
+  };
+}
 
-  function fitGameToScreen(){
-    const { w, h } = getVisibleSize();
+function fitGameToScreen(){
+  const { w, h } = getVisibleSize();
 
-    // alto real visible (para tu body/min-height actual)
-    document.documentElement.style.setProperty("--appH", `${h}px`);
+  // alto real visible (iOS Safari)
+  document.documentElement.style.setProperty("--appH", `${h}px`);
 
-    const MAX_CSS_W = 980; // como tu max-width anterior
-	const scale = Math.min(
-	  MAX_CSS_W / BASE_W, // no crecer más de 980px de ancho
-	  w / BASE_W,         // no salirse por ancho visible
-	  h / BASE_H          // no salirse por alto visible
-	);
+  // paddings reales
+  const bodyCS = getComputedStyle(document.body);
+  const padBodyY =
+    (parseFloat(bodyCS.paddingTop) || 0) +
+    (parseFloat(bodyCS.paddingBottom) || 0);
 
-    const cssW = Math.floor(BASE_W * scale);
-    const cssH = Math.floor(BASE_H * scale);
+  const appCS = getComputedStyle(app);
+  const padAppX =
+    (parseFloat(appCS.paddingLeft) || 0) +
+    (parseFloat(appCS.paddingRight) || 0);
+  const padAppY =
+    (parseFloat(appCS.paddingTop) || 0) +
+    (parseFloat(appCS.paddingBottom) || 0);
 
-    canvas.style.width  = cssW + "px";
-    canvas.style.height = cssH + "px";
-  }
+  // altura real de la HUD
+  const hudH = hud ? hud.getBoundingClientRect().height : 0;
 
-	fitBurst();
-	window.addEventListener("resize", fitBurst, { passive: true });
-	window.addEventListener("orientationchange", fitBurst, { passive: true });
-	if (window.visualViewport){
-	  window.visualViewport.addEventListener("resize", fitBurst, { passive: true });
-	  window.visualViewport.addEventListener("scroll", fitBurst, { passive: true });
-	}
+  // 🔑 área realmente disponible para el CANVAS
+  const availW = Math.max(1, w - padAppX);
+  const availH = Math.max(1, h - padBodyY - padAppY - hudH);
+
+  const MAX_CSS_W = 980;
+
+  const scale = Math.min(
+    MAX_CSS_W / BASE_W,
+    availW / BASE_W,
+    availH / BASE_H
+  );
+
+  canvas.style.width  = Math.floor(BASE_W * scale) + "px";
+  canvas.style.height = Math.floor(BASE_H * scale) + "px";
+}
+
+// 🔁 iOS necesita varios refits tras rotar
+function fitBurst(){
+  fitGameToScreen();
+  requestAnimationFrame(fitGameToScreen);
+  setTimeout(fitGameToScreen, 50);
+  setTimeout(fitGameToScreen, 150);
+  setTimeout(fitGameToScreen, 300);
+}
+
+// inicial
+fitBurst();
+
+// listeners
+window.addEventListener("resize", fitBurst, { passive:true });
+window.addEventListener("orientationchange", fitBurst, { passive:true });
+
+if (window.visualViewport){
+  window.visualViewport.addEventListener("resize", fitBurst, { passive:true });
+  window.visualViewport.addEventListener("scroll", fitBurst, { passive:true });
+}
+
 
 
   // === BLOQUEO DE ZOOM: DESPUÉS de haber encajado la pantalla ===
