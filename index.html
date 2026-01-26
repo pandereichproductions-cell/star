@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Falcon Run – Asteroides & TIE</title>
   <style>
     :root{
@@ -47,7 +47,7 @@
 	}
     .hud b{ color:var(--fg); }
     canvas{
-      width:100%;
+      width:auto;
       height:auto;
       border-radius:16px;
       background:linear-gradient(var(--bg2), var(--bg1) 65%);
@@ -115,38 +115,75 @@
 <script>
 (() => {
 
-  // iOS Safari: ajustar alto real visible (evita corte por barras al girar)
-  function setAppHeight(){
-    const h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+   const canvas = document.getElementById("c");
+
+  // === FIT REAL EN iOS (que se vea ENTERO en landscape) ===
+  const BASE_W = 960, BASE_H = 440;
+
+  function getVisibleSize(){
+    const vv = window.visualViewport;
+    const w = Math.floor(vv ? vv.width  : window.innerWidth);
+    const h = Math.floor(vv ? vv.height : window.innerHeight);
+    return { w, h };
+  }
+
+  function fitGameToScreen(){
+    const { w, h } = getVisibleSize();
+
+    // alto real visible (para tu body/min-height actual)
     document.documentElement.style.setProperty("--appH", `${h}px`);
-  }
-  setAppHeight();
-  window.addEventListener("resize", setAppHeight);
-  window.addEventListener("orientationchange", setAppHeight);
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener("resize", setAppHeight);
-  }
-  
-  const canvas = document.getElementById("c");
-  // --- iOS Safari: evitar zoom por doble-tap / gestos ---
-  // Bloquea gesture zoom (pinch/double-tap)
-  document.addEventListener('gesturestart', (e) => e.preventDefault());
-  document.addEventListener('gesturechange', (e) => e.preventDefault());
-  document.addEventListener('gestureend', (e) => e.preventDefault());
 
-  // Bloquea double-tap zoom en iOS (sin romper taps normales)
-  let __lastTouchEnd = 0;
-  document.addEventListener('touchend', (e) => {
-    const now = Date.now();
-    if (now - __lastTouchEnd <= 300) {
-      e.preventDefault();
-    }
-    __lastTouchEnd = now;
-  }, { passive: false });
+    const MAX_CSS_W = 980; // como tu max-width anterior
+	const scale = Math.min(
+	  MAX_CSS_W / BASE_W, // no crecer más de 980px de ancho
+	  w / BASE_W,         // no salirse por ancho visible
+	  h / BASE_H          // no salirse por alto visible
+	);
 
-  // Evita scroll/zoom al tocar el canvas
-  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-  canvas.addEventListener('touchmove',  (e) => e.preventDefault(), { passive: false });
+    const cssW = Math.floor(BASE_W * scale);
+    const cssH = Math.floor(BASE_H * scale);
+
+    canvas.style.width  = cssW + "px";
+    canvas.style.height = cssH + "px";
+  }
+
+  fitGameToScreen();
+  window.addEventListener("resize", fitGameToScreen, { passive: true });
+  window.addEventListener("orientationchange", fitGameToScreen, { passive: true });
+  if (window.visualViewport){
+    window.visualViewport.addEventListener("resize", fitGameToScreen, { passive: true });
+    window.visualViewport.addEventListener("scroll", fitGameToScreen, { passive: true });
+  }
+
+  // === BLOQUEO DE ZOOM: DESPUÉS de haber encajado la pantalla ===
+  let zoomLocked = false;
+  function lockZoomNow(){
+    if (zoomLocked) return;
+    zoomLocked = true;
+
+    // Pinch zoom en iOS
+    ["gesturestart","gesturechange","gestureend"].forEach(ev => {
+      document.addEventListener(ev, e => e.preventDefault(), { passive:false });
+    });
+
+    // Doble-tap zoom
+    let lastTouchEnd = 0;
+    document.addEventListener("touchend", (e) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) e.preventDefault();
+      lastTouchEnd = now;
+    }, { passive:false });
+
+    // Evita scroll/zoom al tocar el canvas
+    canvas.addEventListener("touchstart", e => e.preventDefault(), { passive:false });
+    canvas.addEventListener("touchmove",  e => e.preventDefault(), { passive:false });
+  }
+
+  // En el primer input real del usuario: re-fit (por si Safari movió barras) y bloquea zoom
+  window.addEventListener("pointerdown", () => {
+    fitGameToScreen();
+    lockZoomNow();
+  }, { once:true, passive:true });
 
 
 // ======= LETRAS PIXELADAS  ==========
@@ -1121,6 +1158,9 @@ function initStars(){
 
 	 // ✅ limpiar FX
 	  particles.length = 0;
+	  debris.length = 0;
+	  tieWrecks.length = 0;
+
 	  shakeT = 0;
 	  shakeAmp = 0;
 	  flashT = 0;
@@ -1295,6 +1335,14 @@ canvas.addEventListener("pointerdown", () => {
            a.y < b.y + b.h &&
            a.y + a.h > b.y;
   }
+
+function spawnHitScreenFX(power = 1){
+  // power ~ 0.7..1.3
+  shakeT   = Math.max(shakeT, 0.10 * power);
+  shakeAmp = Math.max(shakeAmp, 10 * power);
+  flashT   = Math.max(flashT, 0.07 * power);
+}
+
 	
 function spawnExplosion(x, y){
   // chispas (rápidas)
@@ -1331,6 +1379,14 @@ function spawnExplosion(x, y){
   flashT = 0.10;
 }
 
+function impactShake(){
+  // pequeño, parecido al game over pero suave
+  shakeT   = Math.max(shakeT || 0, 0.12);   // duración
+  shakeAmp = Math.max(shakeAmp || 0, 10);   // intensidad
+  flashT   = Math.max(flashT || 0, 0.05);   // flash corto (si lo usas)
+}
+
+
 function spawnMiniFX(x, y){
   // chispas + humo, sin shake/flash (para impactos menores)
   for (let i=0; i<10; i++){
@@ -1345,43 +1401,91 @@ function spawnMiniFX(x, y){
   }
 }
 
+function makeRockPoly(){
+  const n = (Math.random() * 3 + 4) | 0; // 4..6 lados
+  const pts = [];
+  for (let i = 0; i < n; i++){
+    const a = (i / n) * Math.PI * 2 + rand(-0.35, 0.35);
+    const rr = rand(0.55, 1.15);
+    pts.push([Math.cos(a) * rr, Math.sin(a) * rr]);
+  }
+  return pts;
+}
+
 // --- FX simple: trozos de asteroide volando ---
 function spawnAsteroidDebris(x, y, r){
-  const n = 7; // pocos trozos (barato)
-  for (let i=0; i<n; i++){
-    const a = rand(0, Math.PI*2);
-    const sp = rand(140, 320);
+  let n;
+  if (r > 34)       n = rand(12, 18) | 0;
+  else if (r > 26)  n = rand(9, 14)  | 0;
+  else              n = rand(6, 10)  | 0;
+
+  const sizeK = Math.min(1.35, r / 26); // 👈 SOLO UNA VEZ
+
+  for (let i = 0; i < n; i++){
+    const a = rand(0, Math.PI * 2);
+    const spike = (Math.random() < 0.10) ? rand(1.2, 1.6) : 1.0;
+    const sp = rand(90, 210) * sizeK * spike;
+
+    let rr = rand(2.5, 6.5) * sizeK;
+
+    if (Math.random() < 0.12) rr *= rand(1.8, 2.4);
+    rr = Math.min(rr, 14 * sizeK);
+
     debris.push({
-      x, y,
-      vx: Math.cos(a)*sp,
-      vy: Math.sin(a)*sp,
-      r: rand(3, Math.max(4, r*0.22)),
-      rot: rand(0, Math.PI*2),
-      vr: rand(-10, 10),
-      life: rand(0.8, 1.35)
+      x: x + rand(-r*0.12, r*0.12),
+      y: y + rand(-r*0.12, r*0.12),
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp,
+      r: rr,
+      rot: rand(0, Math.PI * 2),
+      vr: rand(-8, 8),
+      life: rand(0.55, 1.15),
+      poly: makeRockPoly()
     });
+  }
+
+  if (r > 30 && Math.random() < 0.35){
+    spawnMiniFX(x, y);
   }
 }
 
-// --- FX simple: TIE partido en dos que cae al suelo ---
+
+
+// --- FX: TIE se rompe en 2 alas + cabina ---
 function spawnTieWreck(x, y){
-  // dos trozos que salen despedidos en cualquier dirección y girando (más lento, sin "caída")
-  for (const side of [-1, 1]){
-    const ang = rand(0, Math.PI * 2);
-    const sp  = rand(140, 240); // más despacio
-    tieWrecks.push({
-      x, y,
-      vx: Math.cos(ang) * sp,
-      vy: Math.sin(ang) * sp,
-      rot: rand(-Math.PI, Math.PI),
-      vr: rand(-6, 6),
-      side,
-      mark: (Math.random() < 0.5 ? -1 : 1),
-      life: 1.6
-    });
-  }
+  // 2 alas (wing) + 1 cabina (cockpit)
+  const pieces = [
+    { kind: "wing",   side: -1, mark: -1, life: 1.6 },
+    { kind: "wing",   side: +1, mark: +1, life: 1.6 },
+    { kind: "cockpit", side: 0, mark:  0, life: 1.8 },
+  ];
+
+  for (const p of pieces){
+  const ang = rand(0, Math.PI * 2);
+  const sp  = (p.kind === "cockpit") ? rand(110, 190) : rand(150, 260);
+
+  let vx = Math.cos(ang) * sp;
+  let vy = Math.sin(ang) * sp;
+
+  if (p.kind === "cockpit") vx -= 90;
+
+  tieWrecks.push({
+    kind: p.kind,
+    x: x + (p.kind === "wing" ? p.side * 10 : 0),
+    y: y + rand(-2, 2),
+    vx, vy,
+    rot: rand(-Math.PI, Math.PI),
+    vr: (p.kind === "cockpit") ? rand(-3.5, 3.5) : rand(-6, 6),
+    side: p.side,
+    mark: p.mark,
+    life: p.life
+  });
+}
+
+
   spawnMiniFX(x, y);
 }
+
 
 
 function updateDebrisAndWrecks(dt){
@@ -1390,9 +1494,9 @@ function updateDebrisAndWrecks(dt){
     const d = debris[i];
     d.life -= dt;
     if (d.life <= 0){ debris.splice(i,1); continue; }
-    d.vy += 650 * dt;              // gravedad suave
-    d.vx *= Math.pow(0.55, dt);     // freno
-    d.vy *= Math.pow(0.70, dt);
+    d.vy += 320 * dt;              // gravedad suave
+    d.vx *= Math.pow(0.45, dt);     // freno
+    d.vy *= Math.pow(0.60, dt);
     d.x += d.vx * dt;
     d.y += d.vy * dt;
     d.rot += d.vr * dt;
@@ -1456,71 +1560,142 @@ function hexPath(ctx, r, sy=1){
   ctx.closePath();
 }
 
+ 
+function drawTIECockpitChunk(ctx){
+  const rOut = 6;
+  const rIn  = 4;
+
+  // exterior
+  ctx.fillStyle = "#9ca3af";
+  for (let yy = -rOut; yy <= rOut; yy++){
+	const dx = Math.floor(Math.sqrt(rOut*rOut - yy*yy));
+	ctx.fillRect(-dx, yy, dx*2 + 1, 1);
+  }
+
+  // interior desplazado a la izquierda (3D)
+  const cxi = -2;
+  ctx.fillStyle = "#6b7280";
+  for (let yy = -rIn; yy <= rIn; yy++){
+	const dx = Math.floor(Math.sqrt(rIn*rIn - yy*yy));
+	ctx.fillRect(cxi - dx, yy, dx*2 + 1, 1);
+  }
+
+  // brillo
+  ctx.fillStyle = "rgba(255,255,255,.12)";
+  ctx.fillRect(cxi - 1, -1, 2, 2);
+
+  // outline oscuro (para que se lea tipo sprite)
+  ctx.strokeStyle = "#0b1020";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, rOut + 0.5, 0, Math.PI*2);
+  ctx.stroke();
+}
+
+
+
+// Helper: ala hexagonal EXACTAMENTE con el look del TIE (flat-top + borde + radios a 6 vértices)
+function drawTieWingPanelLikeOriginal(ctx, r, sy, mark){
+  const fillCol  = "#3a3f46";
+  const edgeCol  = "#7d828c";
+  const notchCol = "rgba(0,0,0,0.22)";
+
+  const ROT = Math.PI/6; // <-- pon aquí el MISMO que use tu hexPath/tie vivo
+
+  ctx.fillStyle = fillCol;
+  ctx.strokeStyle = edgeCol;
+  ctx.lineWidth = 2;
+
+  hexPath(ctx, r, sy); ctx.fill();
+  hexPath(ctx, r, sy); ctx.stroke();
+
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i=0; i<6; i++){
+	const a = ROT + i*(Math.PI/3);
+	ctx.moveTo(0,0);
+	ctx.lineTo(Math.cos(a)*r*0.86, Math.sin(a)*r*0.86*sy);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.fillRect(-0.5, -0.5, 1, 1);
+
+  ctx.fillStyle = notchCol;
+  const notchX = r * 0.72 * (mark || 1);
+  ctx.fillRect((notchX)|0, (-r*0.55*sy)|0, 2, 1);
+}
+
 function drawDebrisAndWrecks(){
-  // trozos de asteroide (cuadraditos/pedruscos)
+
+  // --- trozos de asteroide ---
   for (const d of debris){
     ctx.save();
     ctx.translate(d.x, d.y);
     ctx.rotate(d.rot);
+
     ctx.globalAlpha = Math.max(0, Math.min(1, d.life / 1.2));
-    ctx.fillStyle = "rgba(140,150,165,1)";
     const s = d.r;
-    ctx.fillRect(-s, -s, s*2, s*2);
-    // puntito más claro para dar relieve
-    ctx.globalAlpha *= 0.55;
-    ctx.fillStyle = "rgba(210,220,235,1)";
-    ctx.fillRect(-s*0.35, -s*0.35, s*0.55, s*0.55);
+
+    // relleno roca
+    ctx.fillStyle = "rgba(140,150,165,1)";
+
+    if (d.poly){
+      // fragmento poligonal
+      ctx.beginPath();
+      const p0 = d.poly[0];
+      ctx.moveTo(p0[0] * s, p0[1] * s);
+      for (let i = 1; i < d.poly.length; i++){
+        const p = d.poly[i];
+        ctx.lineTo(p[0] * s, p[1] * s);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // borde sutil
+      ctx.globalAlpha *= 0.55;
+      ctx.strokeStyle = "rgba(210,220,235,1)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // brillo pequeño
+      ctx.globalAlpha *= 0.65;
+      ctx.fillStyle = "rgba(210,220,235,1)";
+      ctx.fillRect(-s*0.18, -s*0.18, s*0.22, s*0.22);
+
+    } else {
+      // fallback antiguo (cuadrado)
+      ctx.fillRect(-s, -s, s*2, s*2);
+
+      // puntito más claro para dar relieve
+      ctx.globalAlpha *= 0.55;
+      ctx.fillStyle = "rgba(210,220,235,1)";
+      ctx.fillRect(-s*0.35, -s*0.35, s*0.55, s*0.55);
+    }
+
     ctx.restore();
   }
 
-  // restos de TIE (paneles hexagonales simples)
+  // --- restos de TIE (2 alas + cabina) ---
   for (const w of tieWrecks){
     ctx.save();
     ctx.translate(w.x, w.y);
     ctx.rotate(w.rot);
 
-    const a = Math.max(0, Math.min(1, w.life / 1.6));
-    ctx.globalAlpha = a;
+    const denom = (w.kind === "cockpit") ? 1.8 : 1.6;
+    ctx.globalAlpha = Math.max(0, Math.min(1, w.life / denom));
 
-    // panel hex (ala)
-    ctx.fillStyle = "rgba(125,130,140,1)";
-    ctx.strokeStyle = "rgba(210,220,235,0.65)";
-    ctx.lineWidth = 2;
-
-    // el hex se dibuja ligeramente "alto" para parecerse al sprite
-    const r = 11;
-    const sy = 1.08;
-
-    hexPath(ctx, r, sy);
-    ctx.fill();
-
-    // borde fino
-    ctx.globalAlpha = a * 0.9;
-    hexPath(ctx, r, sy);
-    ctx.stroke();
-
-    // detalle interior (cruz/lineas) estilo TIE, muy simple
-    ctx.globalAlpha = a * 0.75;
-    ctx.beginPath();
-    ctx.moveTo(-r*0.55, 0);
-    ctx.lineTo( r*0.55, 0);
-    ctx.moveTo(0, -r*0.55*sy);
-    ctx.lineTo(0,  r*0.55*sy);
-    ctx.stroke();
-
-    // puntito luminoso (da vida)
-    ctx.globalAlpha = a * 0.55;
-    ctx.fillStyle = "rgba(235,240,250,1)";
-    ctx.fillRect(-1.5, -1.5, 3, 3);
-    // notch asimétrico para que la rotación se note
-    ctx.globalAlpha = a * 0.7;
-    ctx.fillStyle = "rgba(35,38,45,1)";
-    const notchX = r * 0.78 * (w.mark || 1);
-    ctx.fillRect(notchX - 2, -2, 4, 4);
+    if (w.kind === "cockpit"){
+      drawTIECockpitChunk(ctx);
+    } else {
+      drawTieWingPanelLikeOriginal(ctx, 10, 1.25, w.mark);
+    }
 
     ctx.restore();
   }
 }
+
+
 
 
 function updateParticles(dt){
@@ -1652,6 +1827,7 @@ function unlockAudio(){
 	restartTimer = 1.2;   // segundos que debe verse la explosión
 
   }
+  
   // Aviso pixel al perder un escudo
   function showShieldLoss(){
     // shields ya viene decrementado en las colisiones
@@ -1737,8 +1913,9 @@ function maybeEnterPhase3(){
 
 
   function update(dt){
+  
 	//updateParticles(dt);
-	updateDebrisAndWrecks(dt);
+	//updateDebrisAndWrecks(dt);
 	// timer avisos de fase
 	if (phaseT > 0) phaseT = Math.max(0, phaseT - dt);
 	// timer aviso escudo
@@ -1892,7 +2069,7 @@ function maybeEnterPhase3(){
       if (!t.passed && t.x + t.w < ship.x - 10){
         t.passed = true;
         score += 1;
-        scoreEl.textContent = String(Math.floor(score));
+        scoreEl.textContent = String(Math.floor(score)*10);
       }
 
       // disparos
@@ -1970,6 +2147,10 @@ function maybeEnterPhase3(){
           if (shields > 0) {
             shields--;
             showShieldLoss();
+			spawnHitScreenFX(shields === 1 ? 1.15 : 1.0);
+			spawnMiniFX(ship.x, ship.y); // opcional, queda muy bien para “impacto”
+			impactShake();
+			
             invulTimer = 60;
             if (window.sfxCrash) sfxCrash.play();
             a.dead = true; 
@@ -1990,6 +2171,9 @@ function maybeEnterPhase3(){
           if (shields > 0) {
             shields--;
             showShieldLoss();
+			spawnHitScreenFX(shields === 1 ? 1.15 : 1.0);
+			spawnMiniFX(ship.x, ship.y); // opcional, queda muy bien para “impacto”
+			impactShake();
             invulTimer = 60;
             if (window.sfxCrash) sfxCrash.play();
             t.dead = true; 
@@ -2005,7 +2189,7 @@ function maybeEnterPhase3(){
     if (invulTimer > 0) invulTimer--;
 
     // actualizar score mostrado aunque sumemos fracciones por asteroides
-    scoreEl.textContent = String(Math.floor(score));
+    scoreEl.textContent = String(Math.floor(score)*10);
 	
 	// Motor: flash instantáneo (solo 1 frame)
 	// Motor: flash 1-frame visible (update va antes que draw)
@@ -2060,7 +2244,6 @@ function maybeEnterPhase3(){
 
   ctx.restore();
 }
-
 
 
   function drawHitboxes(){
@@ -2142,7 +2325,6 @@ function maybeEnterPhase3(){
  }
 
 
-
 function draw(){
     ctx.clearRect(0,0,W,H);
 
@@ -2185,13 +2367,20 @@ function draw(){
     for (const t of ties){
       const frame = Math.floor((t.anim += 0.18) % 2);
       const spr = SPR.tie[frame];
-      ctx.drawImage(spr, (t.x|0), ((t.y - t.h/2)|0), (t.w|0), (t.h|0));
+      const S = 0.75; // TIE más pequeño o grande, prueba 0.90–0.95
+		ctx.drawImage(
+		  spr,
+		  (t.x + t.w*(1-S)/2) | 0,
+		  (t.y - (t.h*S)/2) | 0,
+		  (t.w * S) | 0,
+		  (t.h * S) | 0
+		);
     }
 
    for (const l of lasers){
 
 	  // 🎲 radio variable del glow (flicker sutil)
-	  const r = 4 + Math.random()*2;
+	  const r = 3 + Math.random()*2;
 
 	  // === GLOW redondeado ===
 	  ctx.save();
@@ -2233,7 +2422,7 @@ function draw(){
 
     }
     if (gameOver){
-	  const s = String(Math.floor(score));
+	  const s = String(Math.floor(score)*10);
 	  const cx = (W / 2) | 0;
 
 	  // tamaños
@@ -2550,15 +2739,15 @@ const tie = [];
 function tieHexLikeWreck(g, cx, cy, r){
   g.save();
   g.translate(cx, cy);
-  // ❌ NO rotamos aquí: ya usamos offset en el ángulo (evita doble rotación)
-
-  // Hex (flat-top: lado arriba)
+  const ROT = Math.PI / 3;
+  const SY  = 1.25;          // ← FACTOR VERTICAL (1.1–1.25 ideal)
+  
+  // Hex (flat-top: lado arriba)  
   g.beginPath();
-  for (let i = 0; i < 6; i++){
-    const ROT = Math.PI / 3; // 30° + 60° = 90° total
+  for (let i = 0; i < 6; i++){    
 	const a = ROT + i * (Math.PI / 3);
     const x = Math.cos(a) * r;
-    const y = Math.sin(a) * r;
+	const y = Math.sin(a) * r * SY;
     if (i === 0) g.moveTo(x, y);
     else g.lineTo(x, y);
   }
@@ -2578,9 +2767,13 @@ function tieHexLikeWreck(g, cx, cy, r){
   g.lineWidth = 1;
   g.beginPath();
   for (let i = 0; i < 6; i++){
-    const a = Math.PI / 6 + i * (Math.PI / 3);
+    const a = ROT + i * (Math.PI / 3);  // nervios hacia los vértices
     g.moveTo(0, 0);
-    g.lineTo(Math.cos(a) * r * 0.78, Math.sin(a) * r * 0.78);
+    g.lineTo(
+	 Math.cos(a) * r * 0.78,
+	 Math.sin(a) * r * 0.78 * SY
+   );
+
   }
   g.stroke();
 
@@ -2648,13 +2841,16 @@ for (let f = 0; f < 2; f++){
     const dx = Math.floor(Math.sqrt(rOut*rOut - yy*yy));
     px(g, cx - dx, cy + yy, dx*2 + 1, 1, "#9ca3af");
   }
-  // interior
-  for (let yy = -rIn; yy <= rIn; yy++){
-    const dx = Math.floor(Math.sqrt(rIn*rIn - yy*yy));
-    px(g, cx - dx, cy + yy, dx*2 + 1, 1, "#6b7280");
-  }
-  // brillo
-  px(g, cx - 1, cy - 1, 2, 2, "rgba(255,255,255,.12)");
+	const cxi = cx - 2; // centro interior desplazado a la izquierda
+
+	// interior
+	for (let yy = -rIn; yy <= rIn; yy++){
+	  const dx = Math.floor(Math.sqrt(rIn*rIn - yy*yy));
+	  px(g, cxi - dx, cy + yy, dx*2 + 1, 1, "#6b7280");
+	}
+
+	// brillo (también desplazado)
+	px(g, cxi - 1, cy - 1, 2, 2, "rgba(255,255,255,.12)");
 
   // =========================
   // 3) DERECHA DELANTE
@@ -2675,8 +2871,6 @@ for (let f = 0; f < 2; f++){
   outline(g, "#0b1020");
   tie.push(c);
 }
-
-
 
 
 
@@ -2810,6 +3004,8 @@ function loop(t){
 	
 	  // ✅ esto SIEMPRE, incluso en game over
 	updateParticles(dt);
+	updateDebrisAndWrecks(dt);
+	
 	if (!canRestart) {
 	  restartTimer -= dt;
 	 if (restartTimer <= 0) {
