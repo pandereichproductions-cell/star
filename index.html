@@ -120,12 +120,23 @@
 <script>
 (() => {
 
- const canvas = document.getElementById("c");
+const canvas = document.getElementById("c");
 const app = document.getElementById("app");
 const hud = document.getElementById("hud");
 
 const BASE_W = 960;
 const BASE_H = 440;
+
+// ===== DEBUG / MODOS =====
+const GOD_SHIELDS = false;      // false = juego normal
+const WARMUP_SECONDS = 3.0;     // segundos de ensayo inicial
+
+// ===== ESTADO WARM-UP =====
+let inWarmup = false;
+let warmupT = 0;
+
+
+
 
 function getVisibleSize(){
   const vv = window.visualViewport;
@@ -396,6 +407,9 @@ let shieldDur = 0;
 	let laserGain = null;
 	let crashBuf = null;
 	let sfxGain = null;  // ganancia para FX
+	let hitShieldBuf = null;
+	let hitShieldGain = null; // opcional, si quieres volumen propio
+
 
 	//let musicEnabled = true;
 	let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
@@ -430,17 +444,17 @@ let shieldDur = 0;
 		  }
 		};
 
-		// Cargamos ambos buffers (láser y explosión)
 		const bufs = await Promise.all([
 		  load("audio/8-bit-laser.mp3"),
-		  load("audio/8-bit-explosion.mp3")
+		  load("audio/8-bit-explosion.mp3"),
+		  load("audio/8-bit-hitShield.mp3")
 		]);
 
-		laserBuf = bufs[0];
-		crashBuf = bufs[1];
+		laserBuf     = bufs[0];
+		crashBuf     = bufs[1];
+		hitShieldBuf = bufs[2];
 
-		// Si no se pudo cargar nada, apagamos WebAudio para no dejar ctx “colgado”
-		if (!laserBuf && !crashBuf){
+		if (!laserBuf && !crashBuf && !hitShieldBuf) {
 		  try { await laserCtx.close(); } catch(e){}
 		  laserCtx = null;
 		  return false;
@@ -448,31 +462,61 @@ let shieldDur = 0;
 
 		return true;
 	  } catch(e){
-		// Si algo falla, no dejamos el juego roto
-		try { if (laserCtx) await laserCtx.close(); } catch(_e){}
-		laserCtx = null;
-		laserBuf = null;
-		crashBuf = null;
-		return false;
-	  }
+	  // Si algo falla, no dejamos el juego roto
+	  try { if (laserCtx) await laserCtx.close(); } catch(_e){}
+	  laserCtx = null;
+
+	  laserBuf = null;
+	  crashBuf = null;
+	  hitShieldBuf = null;
+
+	  laserGain = null;
+	  hitShieldGain = null;
+	  sfxGain = null;
+
+	  return false;
 	}
 
-
+	}
 
 	function saveAudioPref(){
 	  localStorage.setItem("audioEnabled", audioEnabled);
 	}
-
 
 	const sfxCrash = new Audio("audio/8-bit-explosion.mp3");
 	sfxCrash.volume = 0.9;
 
 	const sfxLaser = new Audio("audio/8-bit-laser.mp3");
 	sfxLaser.volume = 0.6;
+	
+	const sfxShieldHit = new Audio("audio/8-bit-hitShield.mp3");
+	sfxShieldHit.volume = 0.8;
 
-	const music = new Audio("audio/8-bit-music.mp3");
+	const music = new Audio("audio/8-bit-music2.mp3");
 	music.loop = true;
 	music.volume = 0.20;
+
+	// ===== AUDIO HELPERS =====
+	function playShieldHit(){
+	  // WebAudio primero
+	  if (audioEnabled && audioUnlocked && laserCtx && hitShieldBuf){
+		try{
+		  const src = laserCtx.createBufferSource();
+		  src.buffer = hitShieldBuf;
+		  src.connect(hitShieldGain || sfxGain);
+		  src.start(0);
+		  return;
+		} catch(e){}
+	  }
+
+	  // fallback HTMLAudio
+	  if (!audioEnabled || !audioUnlocked) return;
+	  try {
+		sfxShieldHit.currentTime = 0;
+		sfxShieldHit.play();
+	  } catch(e){}
+	}
+
 
 	// ---- Botón música ----
 	const musicBtn = document.getElementById("musicToggle");
@@ -500,7 +544,6 @@ let shieldDur = 0;
 	updateMusicIcon();
 
 
-
 	
 function startMusic(){
   //if (!musicEnabled) return;
@@ -518,11 +561,9 @@ function stopMusic(){
 }
 
 
-
-  // --- HALCÓN: tu imagen embebida (con fondo transparente) ---
 // --- HALCÓN: PNG embebido (tu imagen) + fondo negro transparente ---
-	const falconImg = new Image();
-	falconImg.src = "data:image/png;base64,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"
+const falconImg = new Image();
+falconImg.src = "data:image/png;base64,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"
 
 // --- PLANETA DE FONDO (fijo, difuso) ---
 const bgPlanetImg = new Image();
@@ -579,7 +620,7 @@ let phase2Shown = false;
 
 
 // --- FASE 3 / Transición a túnel ---
-const PHASE3_UNLOCK_DIST = 12000; // ajusta a tu gusto
+
 // --- Ondulación extra del túnel (fase 3) ---
 const TUNNEL_WAVE_AMP1 = 80;   // px (ajusta)
 const TUNNEL_WAVE_LEN1 = 620;  // px (ajusta)
@@ -689,7 +730,9 @@ const ROCK_AMP = 7;          // “rugosidad” del borde (3–10)
 const ROCK_STEP = 12;        // anchura de “piedras” (8–18)
 
 
-const TIE_UNLOCK_DIST = 6000; // px de worldX; ajusta (4000–9000)
+const TIE_UNLOCK_DIST = 12000; // px de worldX; ajusta (4000–9000)
+const PHASE3_UNLOCK_DIST = 22000; // ajusta a gusto (debe ser > TIE_UNLOCK_DIST)
+
 
 // borde rocoso determinista (no aleatorio cada frame)
 function rockEdgeAt(ix){
@@ -1228,8 +1271,17 @@ function initStars(){
 	  tunnelT = 0;
 
 	  
-	  showPhase("Campo de asteroides", 2.6);
-	  tAst = -phaseDur;   // espera hasta que termine el cartel de FASE 1
+	  // --- Warm-up (ensayo) ---
+		inWarmup = true;
+		warmupT = WARMUP_SECONDS;
+
+		// (opcional) muestra un cartel de ensayo
+		//showPhase("Ensayo", WARMUP_SECONDS);
+
+		// bloquea spawns durante el ensayo usando el mismo mecanismo
+		tAst = -phaseDur;  // mantiene asteroides a raya mientras dura el cartel/ensayo
+		tTie = -phaseDur;  // idem ties (por si acaso)
+
 
 	  
 	  if (audioEnabled){
@@ -1239,8 +1291,6 @@ function initStars(){
 		  musicStarted = false;
 		  stopMusic();
 		}
-
-	  
   }
 
   function thrust(){
@@ -1880,12 +1930,14 @@ function unlockAudio(){
   }
   
   // Aviso pixel al perder un escudo
-  function showShieldLoss(){
-    // shields ya viene decrementado en las colisiones
-    shieldMsg = (shields > 0) ? "ESCUDOS 50%" : "ESCUDOS 0%";
-    shieldDur = 1.5; // segundos
-    shieldT = shieldDur;
-  }
+ function showShieldLoss(){
+  shieldMsg = (shields > 0) ? "ESCUDOS 50%" : "ESCUDOS 0%";
+  shieldDur = 1.5;
+  shieldT = shieldDur;
+
+  playShieldHit(); // ✅ aquí
+}
+
 
 
   
@@ -1957,10 +2009,18 @@ function updateTunnelTransition(dt){
 
 
 function maybeEnterPhase3(){
-  if (!phase3 && !enteringPhase3 && worldX >= PHASE3_UNLOCK_DIST){
-    beginPhase3();
-  }
+  // no durante warm-up
+  if (inWarmup) return;
+
+  // no repetir
+  if (phase3 || enteringPhase3) return;
+
+  // solo por distancia
+  if (worldX < PHASE3_UNLOCK_DIST) return;
+
+  beginPhase3();
 }
+
 
 
   function update(dt){
@@ -1968,6 +2028,24 @@ function maybeEnterPhase3(){
 	//updateParticles(dt);
 	//updateDebrisAndWrecks(dt);
 	// timer avisos de fase
+	if (inWarmup) {
+	  warmupT -= dt;
+	  if (warmupT <= 0) {
+		inWarmup = false;
+
+		showPhase("Campo de asteroides", 2.6);
+
+		// espera a que acabe el cartel antes de spawnear
+		tAst = -phaseDur;
+		nextAst = rand(0.65, 0.95);
+
+		// ties no deberían empezar en fase 1; mantenlos “limpios”
+		tTie = 0;
+		nextTie = rand(1.9, 2.6);
+	  }
+	}
+
+	
 	if (phaseT > 0) phaseT = Math.max(0, phaseT - dt);
 	// timer aviso escudo
 	if (shieldT > 0) shieldT = Math.max(0, shieldT - dt);
@@ -2048,7 +2126,7 @@ function maybeEnterPhase3(){
 
 
     // Spawns (asteroides)
-	if (spawnAsteroids){
+	if (spawnAsteroids && !inWarmup){
 	  tAst += dt;
 	  if (tAst >= nextAst){
 		tAst = 0;
@@ -2058,27 +2136,42 @@ function maybeEnterPhase3(){
 	}
 
 
-    
 	// Aviso de FASE 2 al desbloquear TIE (sin pausar)
 	if (!phase2Shown && worldX >= TIE_UNLOCK_DIST){
 	  phase2Shown = true;
-	  showPhase("¡Peligro! TIE Fighters", 2.8);
+	  showPhase("¡Peligro! TIE Fighters", 3.2);
 	}
+	
+	// Progresión fase 2: 0..1 durante los siguientes X px tras desbloquear TIE
+	const PHASE2_RAMP_PX = 10000; // ajusta (5000–10000)
+	const phase2Prog = Math.max(0, Math.min(1, (worldX - TIE_UNLOCK_DIST) / PHASE2_RAMP_PX));
 
 	// Solo aparecen TIE cuando has avanzado suficiente
-	if (worldX >= TIE_UNLOCK_DIST){
+	if (!inWarmup && worldX >= TIE_UNLOCK_DIST){
 	  if (spawnTies){
 		tTie += dt;
 		if (tTie >= nextTie){
-		  tTie = 0;
-		  nextTie = rand(1.9, 2.6) * tieRate;
-		  spawnTIE();
+			tTie = 0;		  
+				  // Base al empezar fase 2
+			const baseMin = 1.9, baseMax = 2.6;
+			// Más difícil al final de la rampa (más TIEs)
+			const hardMin = 0.8, hardMax = 1.2;
+			// Interpolación suave
+			const minI = baseMin + (hardMin - baseMin) * phase2Prog;
+			const maxI = baseMax + (hardMax - baseMax) * phase2Prog;
+
+			nextTie = rand(minI, maxI) * tieRate;		  
+			spawnTIE();
+			// extra TIE: aumenta con la progresión de fase 2
+			const extraChance = 0.12 + 0.30 * phase2Prog; // 12% -> 42%
+			if (Math.random() < extraChance) spawnTIE();
 		}
 	  }
 	} else {
-	  // evita “burst” al desbloquear
+	  // evita “burst” al desbloquear o durante warmup
 	  tTie = 0;
 	}
+
 
 
     // Mover asteroides
@@ -2164,7 +2257,7 @@ function maybeEnterPhase3(){
       if (aabb(shipBox, laserBox)) {
         if (invulTimer <= 0) {
           if (shields > 0) {
-            shields--;
+            if (!GOD_SHIELDS) shields--;
             showShieldLoss();
             invulTimer = 60; // ~1s (frames)
             // pequeño FX (sin shake)
@@ -2196,7 +2289,7 @@ function maybeEnterPhase3(){
       if (circleHit(ship.x, ship.y, ship.r, a.x, a.y, (a.hitR ?? (a.r * 0.92)))) {
         if (invulTimer <= 0) {
           if (shields > 0) {
-            shields--;
+            if (!GOD_SHIELDS) shields--;
             showShieldLoss();
 			spawnHitScreenFX(shields === 1 ? 1.15 : 1.0);
 			spawnMiniFX(ship.x, ship.y); // opcional, queda muy bien para “impacto”
@@ -2220,7 +2313,7 @@ function maybeEnterPhase3(){
       if (aabb(shipHit, tieHit)) {
         if (invulTimer <= 0) {
           if (shields > 0) {
-            shields--;
+            if (!GOD_SHIELDS) shields--;
             showShieldLoss();
 			spawnHitScreenFX(shields === 1 ? 1.15 : 1.0);
 			spawnMiniFX(ship.x, ship.y); // opcional, queda muy bien para “impacto”
@@ -2252,6 +2345,8 @@ function maybeEnterPhase3(){
   // --- Dibujo ---
   
  function drawBgPlanet(){
+ 
+  if (!running) return; 
   if (!bgPlanetReady) return;
 
   const targetW = W * 0.08; // un poco más grande si quieres que se note “lejos”
@@ -2459,7 +2554,11 @@ function draw(){
 	}
 
     // Halcón
-    drawFalcon();
+	
+	if (running){
+		drawFalcon();
+	}
+    
 
 
     // Debug hitboxes (H)
@@ -2467,11 +2566,22 @@ function draw(){
 	drawGroundHitbox(); 
 
     // UI
-    if (!running){
-		centerPixelText("", 3, -12, "#E9EEF7");
-		centerPixelText("CLICK O ESPACIO PARA EMPEZAR", 2, 22, "rgba(154,167,189,.95)");
+	// UI
+	if (!running){
+	  // Título grande
+	  centerPixelText("FLAPPY FALCON", 5, 20, "#E9EEF7");
 
-    }
+	  // Parpadeo robusto (sin depender de 'time' ni de globalAlpha)
+	  const a = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(performance.now() * 0.008)); // 0.35..1.0
+	  centerPixelText(
+		"CLICK O ESPACIO PARA EMPEZAR",
+		2,
+		75,
+		`rgba(154,167,189,${a.toFixed(3)})`
+	  );
+	}
+
+
     if (gameOver){
 	  const s = String(Math.floor(score)*10);
 	  const cx = (W / 2) | 0;
@@ -2810,7 +2920,7 @@ function tieHexLikeWreck(g, cx, cy, r){
 
   // Borde
   g.strokeStyle = "#7d828c";
-  g.lineWidth = 2;
+  g.lineWidth = 1; //2
   g.stroke();
 
   // Radios interiores: mismo color que el borde (centro -> 6 vértices)
