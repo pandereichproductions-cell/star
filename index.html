@@ -405,8 +405,9 @@ let audioUnlockPromise = null;
 let laserCtx = null;
 let laserBuf = null;
 let laserGain = null;
-let crashBuf = null;
+let explosionBuf  = null;
 let sfxGain = null;  // ganancia para FX
+let sfxReady = false;
 let hitShieldBuf = null;
 let hitShieldGain = null; // opcional, si quieres volumen propio
 let shieldUpBuf = null;
@@ -423,13 +424,23 @@ async function initLaserWebAudio(){
   if (location.protocol === "file:") return false;
 
   try{
-	laserCtx = new (window.AudioContext || window.webkitAudioContext)();
+	laserCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
 
 	// Ganancia general para FX (laser + crash)
 	sfxGain = laserCtx.createGain();
 	sfxGain.gain.value = 0.75;
 	sfxGain.connect(laserCtx.destination);
+	
+	// 🔥 Warm-up audio (iOS): arranca el motor para evitar lag/latencia del primer sonido
+	try{
+	  const b = laserCtx.createBuffer(1, 128, laserCtx.sampleRate);
+	  const src = laserCtx.createBufferSource();
+	  src.buffer = b;
+	  src.connect(sfxGain);
+	  src.start(0);
+	}catch(e){}
 
+	
 	// Ganancia específica del láser
 	laserGain = laserCtx.createGain();
 	laserGain.gain.value = 0.45;
@@ -459,11 +470,12 @@ hitShieldBuf = bufs[2];
 shieldUpBuf = bufs[3];              // <-- NUEVO
 
 
-	if (!laserBuf && !crashBuf && !hitShieldBuf) {
+	if (!laserBuf && !explosionBuf && !hitShieldBuf && !shieldUpBuf) {
 	  try { await laserCtx.close(); } catch(e){}
 	  laserCtx = null;
 	  return false;
 	}
+
 
 	return true;
   } catch(e){
@@ -472,7 +484,7 @@ shieldUpBuf = bufs[3];              // <-- NUEVO
   laserCtx = null;
 
   laserBuf = null;
-  crashBuf = null;
+  explosionBuf  = null;
   hitShieldBuf = null;
 
   laserGain = null;
@@ -872,18 +884,20 @@ function playLaser(){
 function playCrash(){
   if (!audioUnlocked || !audioEnabled) return;
 
-  if (laserCtx && crashBuf){
+  if (laserCtx && explosionBuf){
     const src = laserCtx.createBufferSource();
-    src.buffer = crashBuf;
+    src.buffer = explosionBuf;
     src.connect(sfxGain);
     src.start(0);
     return;
   }
 
-  // fallback por si aún no cargó
+  // fallback por si aún no cargó (desktop / file://)
   sfxCrash.currentTime = 0;
   sfxCrash.play().catch(()=>{});
 }
+
+
 
 function playShieldUp(){
   if (!audioUnlocked || !audioEnabled) return;
@@ -2187,9 +2201,6 @@ function unlockAudio(){
 }
 
 
-
-
-
   function crash(){
     if (gameOver) return;
 	
@@ -2462,14 +2473,22 @@ function maybeEnterPhase3(){
 		  raw = Math.min(1, phase2AstBase + 0.12 * extra); // +12% como máximo, gradual
 		}
 
-		// Curva exponencial suave: empieza parecido pero aprieta antes
-		const k = 3.5; // 2.5–4.0 (más alto = aprieta antes y más fuerte)
-		const phase1Prog = (Math.exp(k * raw) - 1) / (Math.exp(k) - 1);
+		const raw0 = Math.max(0, Math.min(1, worldX / TIE_UNLOCK_DIST));
+
+		// Smoothstep (suaviza transición)
+		const rawAst = raw0 * raw0 * (3 - 2 * raw0);
+
+		// Exponencial suave
+		const k = 3.0;
+		const phase1Prog = (Math.exp(k * rawAst) - 1) / (Math.exp(k) - 1);
 
 
-		// Inicio suave -> Final más denso que tu normal
-		const startMin = 1.25, startMax = 1.75; // inicio
-		const endMin   = 0.40, endMax   = 0.70; // final fase 1 (más denso que 0.55–0.95)
+		// Inicio igual
+		const startMin = 1.25, startMax = 1.75;
+
+		// Final más denso (más asteroides) pero sin golpe
+		const endMin   = 0.34, endMax   = 0.62;  // antes 0.40–0.70
+
 
 		const minI = startMin + (endMin - startMin) * phase1Prog;
 		const maxI = startMax + (endMax - startMax) * phase1Prog;
