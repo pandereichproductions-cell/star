@@ -398,150 +398,159 @@ let shieldT = 0;
 let shieldDur = 0;
 
 
-	// ===== AUDIO =====
-	let musicStarted = false;
-	let audioUnlocked = false;
-	let audioUnlockPromise = null;
-	let laserCtx = null;
-	let laserBuf = null;
-	let laserGain = null;
-	let crashBuf = null;
-	let sfxGain = null;  // ganancia para FX
-	let hitShieldBuf = null;
-	let hitShieldGain = null; // opcional, si quieres volumen propio
+// ===== AUDIO =====
+let musicStarted = false;
+let audioUnlocked = false;
+let audioUnlockPromise = null;
+let laserCtx = null;
+let laserBuf = null;
+let laserGain = null;
+let crashBuf = null;
+let sfxGain = null;  // ganancia para FX
+let hitShieldBuf = null;
+let hitShieldGain = null; // opcional, si quieres volumen propio
+let shieldUpBuf = null;
 
 
-	//let musicEnabled = true;
-	let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
-	
-	async function initLaserWebAudio(){
-	  if (laserCtx) return true;
 
-	  // En file:// fetch de audio da CORS en Chrome/iOS; salimos sin audio
-	  if (location.protocol === "file:") return false;
+//let musicEnabled = true;
+let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
 
+async function initLaserWebAudio(){
+  if (laserCtx) return true;
+
+  // En file:// fetch de audio da CORS en Chrome/iOS; salimos sin audio
+  if (location.protocol === "file:") return false;
+
+  try{
+	laserCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+	// Ganancia general para FX (laser + crash)
+	sfxGain = laserCtx.createGain();
+	sfxGain.gain.value = 0.75;
+	sfxGain.connect(laserCtx.destination);
+
+	// Ganancia específica del láser
+	laserGain = laserCtx.createGain();
+	laserGain.gain.value = 0.45;
+	laserGain.connect(sfxGain);
+
+	const load = async (url) => {
 	  try{
-		laserCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-		// Ganancia general para FX (laser + crash)
-		sfxGain = laserCtx.createGain();
-		sfxGain.gain.value = 0.75;
-		sfxGain.connect(laserCtx.destination);
-
-		// Ganancia específica del láser
-		laserGain = laserCtx.createGain();
-		laserGain.gain.value = 0.45;
-		laserGain.connect(sfxGain);
-
-		const load = async (url) => {
-		  try{
-			const res = await fetch(url, { cache: "no-store" });
-			if (!res.ok) throw new Error("HTTP " + res.status);
-			const arr = await res.arrayBuffer();
-			return await laserCtx.decodeAudioData(arr);
-		  } catch(e){
-			return null;
-		  }
-		};
-
-		const bufs = await Promise.all([
-		  load("audio/8-bit-laser.mp3"),
-		  load("audio/8-bit-explosion.mp3"),
-		  load("audio/8-bit-hitShield.mp3")
-		]);
-
-		laserBuf     = bufs[0];
-		crashBuf     = bufs[1];
-		hitShieldBuf = bufs[2];
-
-		if (!laserBuf && !crashBuf && !hitShieldBuf) {
-		  try { await laserCtx.close(); } catch(e){}
-		  laserCtx = null;
-		  return false;
-		}
-
-		return true;
+		const res = await fetch(url, { cache: "no-store" });
+		if (!res.ok) throw new Error("HTTP " + res.status);
+		const arr = await res.arrayBuffer();
+		return await laserCtx.decodeAudioData(arr);
 	  } catch(e){
-	  // Si algo falla, no dejamos el juego roto
-	  try { if (laserCtx) await laserCtx.close(); } catch(_e){}
+		return null;
+	  }
+	};
+
+const bufs = await Promise.all([
+  load("audio/laser.mp3"),
+  load("audio/explosion.mp3"),
+  load("audio/hitShield.mp3"),
+  load("audio/8-bit-charge.mp3"),   // <-- NUEVO
+]);
+
+laserBuf = bufs[0];
+explosionBuf = bufs[1];
+hitShieldBuf = bufs[2];
+shieldUpBuf = bufs[3];              // <-- NUEVO
+
+
+	if (!laserBuf && !crashBuf && !hitShieldBuf) {
+	  try { await laserCtx.close(); } catch(e){}
 	  laserCtx = null;
-
-	  laserBuf = null;
-	  crashBuf = null;
-	  hitShieldBuf = null;
-
-	  laserGain = null;
-	  hitShieldGain = null;
-	  sfxGain = null;
-
 	  return false;
 	}
 
-	}
+	return true;
+  } catch(e){
+  // Si algo falla, no dejamos el juego roto
+  try { if (laserCtx) await laserCtx.close(); } catch(_e){}
+  laserCtx = null;
 
-	function saveAudioPref(){
-	  localStorage.setItem("audioEnabled", audioEnabled);
-	}
+  laserBuf = null;
+  crashBuf = null;
+  hitShieldBuf = null;
 
-	const sfxCrash = new Audio("audio/8-bit-explosion.mp3");
-	sfxCrash.volume = 0.9;
+  laserGain = null;
+  hitShieldGain = null;
+  sfxGain = null;
 
-	const sfxLaser = new Audio("audio/8-bit-laser.mp3");
-	sfxLaser.volume = 0.6;
-	
-	const sfxShieldHit = new Audio("audio/8-bit-hitShield.mp3");
-	sfxShieldHit.volume = 0.8;
+  return false;
+}
 
-	const music = new Audio("audio/8-bit-music2.mp3");
-	music.loop = true;
-	music.volume = 0.20;
+}
 
-	// ===== AUDIO HELPERS =====
-	function playShieldHit(){
-	  // WebAudio primero
-	  if (audioEnabled && audioUnlocked && laserCtx && hitShieldBuf){
-		try{
-		  const src = laserCtx.createBufferSource();
-		  src.buffer = hitShieldBuf;
-		  src.connect(hitShieldGain || sfxGain);
-		  src.start(0);
-		  return;
-		} catch(e){}
-	  }
+function saveAudioPref(){
+  localStorage.setItem("audioEnabled", audioEnabled);
+}
 
-	  // fallback HTMLAudio
-	  if (!audioEnabled || !audioUnlocked) return;
-	  try {
-		sfxShieldHit.currentTime = 0;
-		sfxShieldHit.play();
-	  } catch(e){}
-	}
+const sfxCrash = new Audio("audio/8-bit-explosion.mp3");
+sfxCrash.volume = 0.9;
+
+const sfxLaser = new Audio("audio/8-bit-laser.mp3");
+sfxLaser.volume = 0.6;
+
+const sfxShieldHit = new Audio("audio/8-bit-hitShield.mp3");
+sfxShieldHit.volume = 0.8;
+
+const sfxShieldUp = new Audio("audio/8-bit-charge.mp3");
+sfxShieldUp.volume = 0.70;
 
 
-	// ---- Botón música ----
-	const musicBtn = document.getElementById("musicToggle");
+const music = new Audio("audio/8-bit-music2.mp3");
+music.loop = true;
+music.volume = 0.20;
 
-	function updateMusicIcon(){
-	  musicBtn.textContent = audioEnabled ? "🔊" : "🔇";
-	}
+// ===== AUDIO HELPERS =====
+function playShieldHit(){
+  // WebAudio primero
+  if (audioEnabled && audioUnlocked && laserCtx && hitShieldBuf){
+	try{
+	  const src = laserCtx.createBufferSource();
+	  src.buffer = hitShieldBuf;
+	  src.connect(hitShieldGain || sfxGain);
+	  src.start(0);
+	  return;
+	} catch(e){}
+  }
 
-	musicBtn.addEventListener("click", () => {
-	  unlockAudio().then(() => {
-		audioEnabled = !audioEnabled;
-		saveAudioPref();
-		updateMusicIcon();
-
-		if (!audioEnabled){
-		  stopMusic();
-		} else if (!gameOver && running){
-		  musicStarted = true;
-		  startMusic();
-		}
-	  });
-	});
+  // fallback HTMLAudio
+  if (!audioEnabled || !audioUnlocked) return;
+  try {
+	sfxShieldHit.currentTime = 0;
+	sfxShieldHit.play();
+  } catch(e){}
+}
 
 
+// ---- Botón música ----
+const musicBtn = document.getElementById("musicToggle");
+
+function updateMusicIcon(){
+  musicBtn.textContent = audioEnabled ? "🔊" : "🔇";
+}
+
+musicBtn.addEventListener("click", () => {
+  unlockAudio().then(() => {
+	audioEnabled = !audioEnabled;
+	saveAudioPref();
 	updateMusicIcon();
+
+	if (!audioEnabled){
+	  stopMusic();
+	} else if (!gameOver && running){
+	  musicStarted = true;
+	  startMusic();
+	}
+  });
+});
+
+
+updateMusicIcon();
 
 
 	
@@ -607,6 +616,9 @@ const particles = [];
 // --- FX extra: restos de asteroide y chatarra TIE (al chocar con escudo) ---
 const debris = [];    // trozos de asteroide
 const tieWrecks = []; // mitades de TIE
+
+const shieldPickupFX = [];
+
 let shakeT = 0;
 let shakeAmp = 0;
 let flashT = 0;
@@ -617,6 +629,8 @@ let phaseMsg = "";
 let phaseT = 0;
 let phaseDur = 0;
 let phase2Shown = false;
+let phase2AstBase = 0;
+let phase2AstLocked = false;
 
 
 // --- FASE 3 / Transición a túnel ---
@@ -722,16 +736,21 @@ function showPhase(msg, dur=2.6){
 
 
 
-  
- 
 /// --- Planeta / suelo recto pero rocoso ---
 const GROUND_Y = H - 34;     // altura del suelo (sube/baja)
 const ROCK_AMP = 7;          // “rugosidad” del borde (3–10)
 const ROCK_STEP = 12;        // anchura de “piedras” (8–18)
 
 
+const PHASE1_RAMP_PX = 7000; // 5000–9000 suele ir bien
+
 const TIE_UNLOCK_DIST = 12000; // px de worldX; ajusta (4000–9000)
 const PHASE3_UNLOCK_DIST = 22000; // ajusta a gusto (debe ser > TIE_UNLOCK_DIST)
+
+let tPickup = 0;
+let nextPickup = 6.0;              // primer power-up tarda un poco
+const PICKUP_UNLOCK_DIST = TIE_UNLOCK_DIST; // solo en fase 2+
+
 
 
 // borde rocoso determinista (no aleatorio cada frame)
@@ -866,6 +885,21 @@ function playCrash(){
   sfxCrash.play().catch(()=>{});
 }
 
+function playShieldUp(){
+  if (!audioUnlocked || !audioEnabled) return;
+
+  if (laserCtx && shieldUpBuf){
+    const src = laserCtx.createBufferSource();
+    src.buffer = shieldUpBuf;
+    src.connect(sfxGain);
+    src.start(0);
+    return;
+  }
+
+  // fallback por si aún no cargó o no hay WebAudio
+  sfxShieldUp.currentTime = 0;
+  sfxShieldUp.play().catch(()=>{});
+}
 
 
 // --- Suelo PIXEL REAL (simple, sin cráteres/rocas) ---
@@ -1175,6 +1209,7 @@ function initStars(){
   const asteroids = [];
   const ties = [];
   const lasers = []; // disparos enemigos
+  const pickups = [];
 
   // Spawns
   let tAst = 0, nextAst = 0.8;
@@ -1215,7 +1250,7 @@ function initStars(){
 		return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
 	  };
 	}
-  function reset(){
+function reset(){
   
 	resetLowCanvasesHard();  // 🔥 FIX iOS
 	
@@ -1223,7 +1258,7 @@ function initStars(){
     invulTimer = 0;    // <--- Añadir esta línea
     shieldT = 0;
     shieldMsg = "";
-	
+
     running = true;
     gameOver = false;
     score = 0;
@@ -1241,6 +1276,11 @@ function initStars(){
     asteroids.length = 0;
     ties.length = 0;
     lasers.length = 0;
+	
+	pickups.length = 0;
+	tPickup = 0;
+	nextPickup = 6.0;
+	shieldPickupFX.length = 0;
 
     tAst = 0; nextAst = rand(0.65, 0.95);
     tTie = 0; nextTie = rand(1.9, 2.6);
@@ -1260,8 +1300,10 @@ function initStars(){
 	  flashT = 0;
 	  // Fases
 	  phase2Shown = false;
+	  phase2AstBase = 0;
+	  phase2AstLocked = false;
 	  
-	    // --- Reset fase 3 / túnel ---
+		// --- Reset fase 3 / túnel ---
 	  phase3 = false;
 	  enteringPhase3 = false;
 	  spawnAsteroids = true;
@@ -1271,27 +1313,27 @@ function initStars(){
 	  tunnelT = 0;
 
 	  
-	  // --- Warm-up (ensayo) ---
-		inWarmup = true;
-		warmupT = WARMUP_SECONDS;
+  // --- Warm-up (ensayo) ---
+	inWarmup = true;
+	warmupT = WARMUP_SECONDS;
 
-		// (opcional) muestra un cartel de ensayo
-		//showPhase("Ensayo", WARMUP_SECONDS);
+	// (opcional) muestra un cartel de ensayo
+	//showPhase("Ensayo", WARMUP_SECONDS);
 
-		// bloquea spawns durante el ensayo usando el mismo mecanismo
-		tAst = -phaseDur;  // mantiene asteroides a raya mientras dura el cartel/ensayo
-		tTie = -phaseDur;  // idem ties (por si acaso)
+	// bloquea spawns durante el ensayo usando el mismo mecanismo
+	tAst = -phaseDur;  // mantiene asteroides a raya mientras dura el cartel/ensayo
+	tTie = -phaseDur;  // idem ties (por si acaso)
 
 
-	  
-	  if (audioEnabled){
-		  musicStarted = true;
-		  startMusic();
-		} else {
-		  musicStarted = false;
-		  stopMusic();
-		}
-  }
+  
+  if (audioEnabled){
+	  musicStarted = true;
+	  startMusic();
+	} else {
+	  musicStarted = false;
+	  stopMusic();
+	}
+}
 
   function thrust(){
     if (!running) reset();
@@ -1424,6 +1466,55 @@ canvas.addEventListener("pointerdown", () => {
     });
   }
 
+function spawnShieldPickup(){
+  const y = rand(70, H - 70);
+  pickups.push({
+    x: W + 120,
+    y: y,
+    y0: y,                          // 👈 base
+    amp: 5 + Math.random()*5,      // 👈 amplitud (px)
+    freq: 0.9 + Math.random()*0.6,  // 👈 Hz (oscilaciones/seg)
+    phase: Math.random()*Math.PI*2, // 👈 fase aleatoria
+    r: 22,
+    vx: 220 + Math.random()*50,
+    t: 0
+  });
+}
+
+
+function spawnShieldPickupFX(x, y){
+  // 2 ondas principales
+  shieldPickupFX.push({
+    x, y, t: 0, dur: 0.55,
+    r0: 10, r1: 120,
+    a0: 0.95, a1: 0.0,
+    kind: "ring"
+  });
+  shieldPickupFX.push({
+    x, y, t: 0.06, dur: 0.65,
+    r0: 8, r1: 160,
+    a0: 0.55, a1: 0.0,
+    kind: "ringSoft"
+  });
+
+  // “electric sparkles” alrededor (sin humo)
+  for (let i=0;i<18;i++){
+    const ang = Math.random()*Math.PI*2;
+    const rr  = 18 + Math.random()*20;
+    shieldPickupFX.push({
+      x: x + Math.cos(ang)*rr,
+      y: y + Math.sin(ang)*rr,
+      vx: Math.cos(ang)*(40 + Math.random()*120),
+      vy: Math.sin(ang)*(40 + Math.random()*120),
+      t: 0, dur: 0.35 + Math.random()*0.2,
+      a0: 0.9, a1: 0.0,
+      kind: "spark"
+    });
+  }
+}
+
+
+
   // --- Colisiones ---
   function circleHit(ax, ay, ar, bx, by, br){
     const dx = ax - bx, dy = ay - by;
@@ -1513,42 +1604,175 @@ function makeRockPoly(){
   return pts;
 }
 
+
+function drawRockChunk(d){
+  const pts = d.poly; // [[x,y], [x,y], ...]
+  if (!pts || pts.length < 3) return;
+
+  // Luz fija desde arriba-izquierda
+  const lx = -0.75, ly = -0.55;
+
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  ctx.rotate(d.rot);
+
+  // Path polígono escalado por radio
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0] * d.r, pts[0][1] * d.r);
+  for (let i = 1; i < pts.length; i++){
+    ctx.lineTo(pts[i][0] * d.r, pts[i][1] * d.r);
+  }
+  ctx.closePath();
+
+  // Gradiente direccional (volumen)
+  const g = ctx.createLinearGradient(lx*d.r, ly*d.r, -lx*d.r, -ly*d.r);
+  g.addColorStop(0, d.c1 || 'rgb(135,135,145)');
+  g.addColorStop(1, d.c2 || 'rgb(90,90,98)');
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  // Contorno oscuro
+  ctx.lineWidth = Math.max(1, d.r * 0.10);
+  ctx.strokeStyle = d.edge || 'rgba(10,12,18,0.55)';
+  ctx.stroke();
+
+  // Highlight en bordes que miran a la luz
+  ctx.lineWidth = Math.max(1, d.r * 0.07);
+  ctx.strokeStyle = d.hi || 'rgba(235,245,255,0.14)';
+
+  for (let i = 0; i < pts.length; i++){
+    const p0 = pts[i];
+    const p1 = pts[(i + 1) % pts.length];
+
+    const ex = p1[0] - p0[0];
+    const ey = p1[1] - p0[1];
+
+    // normal aproximada del borde
+    const nx = -ey;
+    const ny = ex;
+
+    // si el borde mira hacia la luz, lo resaltamos
+    const dot = nx*lx + ny*ly;
+    if (dot > 0.12){
+      ctx.beginPath();
+      ctx.moveTo(p0[0] * d.r, p0[1] * d.r);
+      ctx.lineTo(p1[0] * d.r, p1[1] * d.r);
+      ctx.stroke();
+    }
+  }
+
+  // Grano opcional (muy ligero)
+  if (d.grain){
+    ctx.globalAlpha = 0.10;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    const k = 3 + (d.r > 10 ? 3 : 0);
+    for (let i=0;i<k;i++){
+      const gx = rand(-0.6, 0.6) * d.r;
+      const gy = rand(-0.6, 0.6) * d.r;
+      const gr = rand(0.10, 0.22) * d.r;
+      ctx.beginPath();
+      ctx.arc(gx, gy, gr, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+}
+
+
 // --- FX simple: trozos de asteroide volando ---
-function spawnAsteroidDebris(x, y, r){
+
+function spawnAsteroidDebris(x, y, r, avx = 0, sizeType = 'normal'){
   let n;
   if (r > 34)       n = rand(12, 18) | 0;
   else if (r > 26)  n = rand(9, 14)  | 0;
   else              n = rand(6, 10)  | 0;
 
-  const sizeK = Math.min(1.35, r / 26); // 👈 SOLO UNA VEZ
+  const isHuge = (sizeType === 'huge');
+
+  const sizeK = Math.min(1.35, r / 26); // tu base
+
+  // (1) Huge = trozos más grandes
+  const hugeSizeMul = isHuge ? 1.65 : 1.0;
+
+  // (2) Hereda parte de la Vx del meteorito
+  // meteorito se mueve hacia la izquierda como -avx (porque x -= avx*dt)
+  const inherit = isHuge ? 0.70 : 0.50;
+  const baseVx = -avx * inherit;
 
   for (let i = 0; i < n; i++){
-    const a = rand(0, Math.PI * 2);
+    const ang = rand(0, Math.PI * 2);
     const spike = (Math.random() < 0.10) ? rand(1.2, 1.6) : 1.0;
     const sp = rand(90, 210) * sizeK * spike;
 
-    let rr = rand(2.5, 6.5) * sizeK;
+    // tamaño: más “chunky” en huge
+    let rr = rand(2.5, 6.5) * sizeK * hugeSizeMul;
 
     if (Math.random() < 0.12) rr *= rand(1.8, 2.4);
-    rr = Math.min(rr, 14 * sizeK);
 
-    debris.push({
-      x: x + rand(-r*0.12, r*0.12),
-      y: y + rand(-r*0.12, r*0.12),
-      vx: Math.cos(a) * sp,
-      vy: Math.sin(a) * sp,
-      r: rr,
-      rot: rand(0, Math.PI * 2),
-      vr: rand(-8, 8),
-      life: rand(0.55, 1.15),
-      poly: makeRockPoly()
-    });
+    rr = Math.min(rr, 14 * sizeK * hugeSizeMul);
+
+	// --- VARIACIÓN DE TONO POR FRAGMENTO (claros / medios / oscuros) ---
+const toneRoll = Math.random();
+let base, dark;
+
+if (toneRoll < 0.28){
+  // CLARO (fractura fresca)
+  base = rand(170, 200);
+  dark = rand(120, 145);
+} else if (toneRoll < 0.75){
+  // MEDIO
+  base = rand(140, 165);
+  dark = rand(95, 120);
+} else {
+  // OSCURO (interior)
+  base = rand(110, 130);
+  dark = rand(70, 90);
+}
+
+	// (opcional) los HUGE tienden a fragmentos más claros
+	if (isHuge && Math.random() < 0.35){
+	  base = rand(190, 210);
+	  dark = rand(100, 155);
+	}
+
+	debris.push({
+	  // posición inicial (ligeramente dispersa)
+	  x: x + rand(-r * 0.12, r * 0.12),
+	  y: y + rand(-r * 0.12, r * 0.12),
+
+	  // 👉 velocidad: conserva parte del vx del meteorito + explosión radial
+	  vx: baseVx * 0.55 + Math.cos(ang) * sp,
+	  vy: Math.sin(ang) * sp,
+
+	  // tamaño y rotación
+	  r: rr,
+	  rot: rand(0, Math.PI * 2),
+	  vr: rand(-8, 8),
+
+	  // vida (un poco mayor en huge)
+	  life: rand(0.55, 1.15) * (isHuge ? 1.15 : 1.0),
+
+	  // forma
+	  poly: makeRockPoly(),
+
+	  // --- shading / look ---
+	  c1: `rgb(${base},${base},${base+10})`,   // cara iluminada
+	  c2: `rgb(${dark},${dark},${dark+8})`,    // cara en sombra
+	  edge: 'rgba(10,12,18,0.55)',             // borde oscuro
+	  hi: 'rgba(235,245,255,0.16)',             // rim light (un pelín más visible)
+	  grain: Math.random() < 0.6                // grano superficial
+	});
+
+
   }
 
   if (r > 30 && Math.random() < 0.35){
     spawnMiniFX(x, y);
   }
 }
+
 
 
 
@@ -1647,7 +1871,26 @@ function updateDebrisAndWrecks(dt){
   }
 }
 
+// FX de escudo
+function updateShieldPickupFX(dt){
+  for (let i = shieldPickupFX.length - 1; i >= 0; i--){
+    const e = shieldPickupFX[i];
+    e.t += dt;
 
+    if (e.kind === "ring" || e.kind === "ringSoft"){
+      e.x = ship.x;
+      e.y = ship.y;
+    } else {
+      e.x += e.vx * dt;
+      e.y += e.vy * dt;
+      const damp = Math.exp(-6.0 * dt);
+      e.vx *= damp;
+      e.vy *= damp;
+    }
+
+    if (e.t >= e.dur) shieldPickupFX.splice(i, 1);
+  }
+}
 
 function hexPath(ctx, r, sy=1){
   // Hexágono vertical (sy permite estirar en Y)
@@ -1731,51 +1974,92 @@ function drawDebrisAndWrecks(){
 
   // --- trozos de asteroide ---
   for (const d of debris){
-    ctx.save();
-    ctx.translate(d.x, d.y);
-    ctx.rotate(d.rot);
+  ctx.save();
+  ctx.translate(d.x, d.y);
+  ctx.rotate(d.rot);
 
-    ctx.globalAlpha = Math.max(0, Math.min(1, d.life / 1.2));
-    const s = d.r;
+  // fade por vida
+  ctx.globalAlpha = Math.max(0, Math.min(1, d.life / 1.2));
+  const s = d.r;
 
-    // relleno roca
-    ctx.fillStyle = "rgba(140,150,165,1)";
+  if (d.poly){
+    const pts = d.poly;
 
-    if (d.poly){
-      // fragmento poligonal
-      ctx.beginPath();
-      const p0 = d.poly[0];
-      ctx.moveTo(p0[0] * s, p0[1] * s);
-      for (let i = 1; i < d.poly.length; i++){
-        const p = d.poly[i];
-        ctx.lineTo(p[0] * s, p[1] * s);
+    // dirección de luz (arriba-izquierda)
+    const lx = -0.75, ly = -0.55;
+
+    // --- PATH ---
+    ctx.beginPath();
+    const p0 = pts[0];
+    ctx.moveTo(p0[0] * s, p0[1] * s);
+    for (let i = 1; i < pts.length; i++){
+      const p = pts[i];
+      ctx.lineTo(p[0] * s, p[1] * s);
+    }
+    ctx.closePath();
+
+    // --- RELLENO CON GRADIENTE (volumen) ---
+    const g = ctx.createLinearGradient(lx*s, ly*s, -lx*s, -ly*s);
+    g.addColorStop(0, d.c1 || "rgb(165,175,190)");
+    g.addColorStop(1, d.c2 || "rgb(95,100,110)");
+    ctx.fillStyle = g;
+    ctx.fill();
+
+    // --- BORDE OSCURO ---
+    ctx.strokeStyle = d.edge || "rgba(10,12,18,0.55)";
+    ctx.lineWidth = Math.max(1, s * 0.10);
+    ctx.stroke();
+
+    // --- RIM LIGHT (bordes hacia la luz) ---
+    ctx.strokeStyle = d.hi || "rgba(235,245,255,0.14)";
+    ctx.lineWidth = Math.max(1, s * 0.07);
+
+    for (let i = 0; i < pts.length; i++){
+      const a = pts[i];
+      const b = pts[(i + 1) % pts.length];
+
+      const ex = b[0] - a[0];
+      const ey = b[1] - a[1];
+      const nx = -ey, ny = ex;        // normal aprox
+      const dot = nx * lx + ny * ly;  // ¿mira a la luz?
+
+      if (dot > 0.12){
+        ctx.beginPath();
+        ctx.moveTo(a[0] * s, a[1] * s);
+        ctx.lineTo(b[0] * s, b[1] * s);
+        ctx.stroke();
       }
-      ctx.closePath();
-      ctx.fill();
-
-      // borde sutil
-      ctx.globalAlpha *= 0.55;
-      ctx.strokeStyle = "rgba(210,220,235,1)";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-
-      // brillo pequeño
-      ctx.globalAlpha *= 0.65;
-      ctx.fillStyle = "rgba(210,220,235,1)";
-      ctx.fillRect(-s*0.18, -s*0.18, s*0.22, s*0.22);
-
-    } else {
-      // fallback antiguo (cuadrado)
-      ctx.fillRect(-s, -s, s*2, s*2);
-
-      // puntito más claro para dar relieve
-      ctx.globalAlpha *= 0.55;
-      ctx.fillStyle = "rgba(210,220,235,1)";
-      ctx.fillRect(-s*0.35, -s*0.35, s*0.55, s*0.55);
     }
 
-    ctx.restore();
+    // --- GRANO / IMPERFECCIONES ---
+    if (d.grain){
+      const oldA = ctx.globalAlpha;
+      ctx.globalAlpha *= 0.10;
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      const k = 3 + (s > 10 ? 3 : 0);
+      for (let i = 0; i < k; i++){
+        const gx = rand(-0.6, 0.6) * s;
+        const gy = rand(-0.6, 0.6) * s;
+        const gr = rand(0.10, 0.22) * s;
+        ctx.beginPath();
+        ctx.arc(gx, gy, gr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = oldA;
+    }
+
+  } else {
+    // --- fallback simple ---
+    ctx.fillStyle = "rgb(120,130,145)";
+    ctx.fillRect(-s, -s, s * 2, s * 2);
+
+    ctx.globalAlpha *= 0.6;
+    ctx.fillStyle = "rgba(220,230,245,0.5)";
+    ctx.fillRect(-s * 0.35, -s * 0.35, s * 0.55, s * 0.55);
   }
+
+  ctx.restore();
+}
 
   // --- restos de TIE (2 alas + cabina) ---
   for (const w of tieWrecks){
@@ -2051,14 +2335,49 @@ function maybeEnterPhase3(){
 	if (shieldT > 0) shieldT = Math.max(0, shieldT - dt);
     if (!running) return;
 
-    // Dificultad suave
-    worldSpeed = 360 + Math.min(420, score * 7);
-    const astRate = (score > 18) ? 0.90 : 1.0; // un pelín más denso con score
-    const tieRate = (score > 25) ? 0.92 : 1.0;
+    // Dificultad suave basada SOLO en distancia
+	const BASE_SPEED = 280;
+	const MAX_ADD    = 360;
+	const RAMP_PX    = 100000; // px para llegar al máximo (ajusta 15000–25000)
+
+	const raw = Math.min(1, worldX / RAMP_PX);
+	const prog = 1 - Math.pow(1 - raw, 2.2);  // sube más lento al principio
+	worldSpeed = BASE_SPEED + MAX_ADD * prog;
+
+
+	// Si quieres mantener algo de ajuste fino:
+	const astRate = (prog > 0.4) ? 0.90 : 1.0;
+	const tieRate = (prog > 0.6) ? 0.92 : 1.0;
+
 
     worldX += worldSpeed * dt;
 		// puede activar fase 3 según distancia
 		
+	
+	// --- Power-ups de escudo (solo durante fase TIE) ---
+	const inTiePhase = (!inWarmup &&
+						worldX >= TIE_UNLOCK_DIST &&
+						worldX < PHASE3_UNLOCK_DIST); // si no quieres limitar, quita esta condición
+
+	if (inTiePhase){
+	  tPickup += dt;
+	  if (tPickup >= nextPickup){
+		tPickup = 0;
+
+		// frecuencia: empieza rara, se vuelve un pelín más común con el progreso
+		const prog = Math.max(0, Math.min(1, (worldX - TIE_UNLOCK_DIST) / 8000));
+		const minS = 4.2 - 1.5 * prog;   // 8.5s -> 6.0s
+		const maxS = 7.0 - 2.0 * prog;  // 13s  -> 10s
+		nextPickup = rand(minS, maxS);
+
+		// probabilidad de spawn
+		if (Math.random() < 0.75) spawnShieldPickup();
+	  }
+	} else {
+	  tPickup = 0; // evita burst al entrar
+	  nextPickup = 6.0; // o rand(5.5, 8.0)
+	}
+	
 	// Score por distancia en fase 3 (aunque no haya enemigos)
 	if (phase3 || enteringPhase3){
 	  // puntos por pixel recorrido
@@ -2130,17 +2449,51 @@ function maybeEnterPhase3(){
 	  tAst += dt;
 	  if (tAst >= nextAst){
 		tAst = 0;
-		nextAst = rand(0.55, 0.95) * (worldSpeed > 650 ? 0.92 : 1) * astRate;
+		// ¿estamos en fase 2?
+		const inPhase2 = (!inWarmup && worldX >= TIE_UNLOCK_DIST && worldX < PHASE3_UNLOCK_DIST);
+
+		let raw;
+		if (!inPhase2){
+		  raw = Math.max(0, Math.min(1, worldX / TIE_UNLOCK_DIST)); // fase 1 igual que ahora
+		} else {
+		  // en fase 2: mantener como llegó + subir MUY lento
+		  const PHASE2_AST_RAMP_PX = 60000; // más alto = más lento (prueba 40000–90000)
+		  const extra = Math.max(0, Math.min(1, (worldX - TIE_UNLOCK_DIST) / PHASE2_AST_RAMP_PX));
+		  raw = Math.min(1, phase2AstBase + 0.12 * extra); // +12% como máximo, gradual
+		}
+
+		// Curva exponencial suave: empieza parecido pero aprieta antes
+		const k = 3.5; // 2.5–4.0 (más alto = aprieta antes y más fuerte)
+		const phase1Prog = (Math.exp(k * raw) - 1) / (Math.exp(k) - 1);
+
+
+		// Inicio suave -> Final más denso que tu normal
+		const startMin = 1.25, startMax = 1.75; // inicio
+		const endMin   = 0.40, endMax   = 0.70; // final fase 1 (más denso que 0.55–0.95)
+
+		const minI = startMin + (endMin - startMin) * phase1Prog;
+		const maxI = startMax + (endMax - startMax) * phase1Prog;
+
+		const speedMul = inPhase2 ? 1.0 : (worldSpeed > 650 ? 0.92 : 1.0);
+		nextAst = rand(minI, maxI) * speedMul * astRate;
+
 		spawnAsteroid();
+
 	  }
 	}
 
 
-	// Aviso de FASE 2 al desbloquear TIE (sin pausar)
+		// Aviso de FASE 2 al desbloquear TIE (sin pausar)
 	if (!phase2Shown && worldX >= TIE_UNLOCK_DIST){
 	  phase2Shown = true;
 	  showPhase("¡Peligro! TIE Fighters", 3.2);
+
+	  if (!phase2AstLocked){
+		phase2AstBase = Math.max(0, Math.min(1, worldX / TIE_UNLOCK_DIST));
+		phase2AstLocked = true;
+	  }
 	}
+
 	
 	// Progresión fase 2: 0..1 durante los siguientes X px tras desbloquear TIE
 	const PHASE2_RAMP_PX = 10000; // ajusta (5000–10000)
@@ -2163,7 +2516,7 @@ function maybeEnterPhase3(){
 			nextTie = rand(minI, maxI) * tieRate;		  
 			spawnTIE();
 			// extra TIE: aumenta con la progresión de fase 2
-			const extraChance = 0.12 + 0.30 * phase2Prog; // 12% -> 42%
+			const extraChance = 0.02 + 0.08 * phase2Prog; // 2% -> 25%
 			if (Math.random() < extraChance) spawnTIE();
 		}
 	  }
@@ -2180,7 +2533,7 @@ function maybeEnterPhase3(){
 
       // Si ha sido destruido (choque con escudo), lo quitamos con FX
       if (a.dead){
-        spawnAsteroidDebris(a.x, a.y, a.r);
+        spawnAsteroidDebris(a.x, a.y, a.r, a.vx, a.sizeType);
         asteroids.splice(i,1);
         continue;
       }
@@ -2282,7 +2635,52 @@ function maybeEnterPhase3(){
         continue;
       }
 	 }
+	 
+	 // --- Mover pickups + colisión ---
+	for (let i = pickups.length - 1; i >= 0; i--){
+	  const p = pickups[i];
 
+	  p.x -= p.vx * dt;
+	  p.t += dt;
+	  // 👇 oscilación vertical
+	 p.y = p.y0 + Math.sin(p.phase + p.t * Math.PI * 2 * p.freq) * p.amp + Math.sin(p.phase*0.7 + p.t * Math.PI * 2 * p.freq * 0.5) * (p.amp * 0.35);
+	 p.y = Math.max(60, Math.min(H - 60, p.y));
+
+	  // colisión círculo-círculo con la nave
+	  const dx = p.x - ship.x;
+	  const dy = p.y - ship.y;
+	  const PICKUP_MAGNET = 10; // px extra de tolerancia
+	  const rr = (p.r + ship.r + PICKUP_MAGNET);
+	
+		if (dx*dx + dy*dy <= rr*rr){
+		  const MAX_SHIELDS = 2; // ajusta si usas otro
+
+		  // siempre suena al recoger
+		  playShieldUp();
+
+		  // sube escudo si puede
+		  shields = Math.min(MAX_SHIELDS, shields + 1);
+
+		  // siempre muestra cartel con % según estado actual
+		  const pct = Math.round((shields / MAX_SHIELDS) * 100);
+		  shieldMsg = (pct >= 100) ? "ESCUDOS AL 100%" : "ESCUDOS AL 50%";
+		  shieldT = 1.2;
+		  shieldDur = 1.2;          // 👈 importante: en tu draw usas shieldDur para el fade :contentReference[oaicite:1]{index=1}
+		  spawnShieldPickupFX(ship.x, ship.y); // NUEVO
+		  
+		  // micro-invulnerabilidad al recoger (no consume escudos)
+		  invulTimer = Math.max(invulTimer, 60); //60 (~1s)
+
+		  // si ya estaba lleno, premio opcional (déjalo si quieres)
+		  if (shields === MAX_SHIELDS) score += 2;
+
+		  pickups.splice(i, 1);
+		  continue;
+		}
+	
+
+	  if (p.x < -140) pickups.splice(i, 1);
+	}
 
     // --- 2. Colisión NAVE vs ASTEROIDES ---
     for (const a of asteroids) {
@@ -2339,8 +2737,10 @@ function maybeEnterPhase3(){
 	// Motor: flash 1-frame visible (update va antes que draw)
 	if (ship.engineFlash > 0) ship.engineFlash--;
 	
+	updateShieldPickupFX(dt);
 
-  }
+
+ }
 
   // --- Dibujo ---
   
@@ -2469,9 +2869,180 @@ function maybeEnterPhase3(){
 
 	  ctx.restore();
  }
+// ================================
+// Pixel-art halo pulsante (power-up escudo)
+// ================================
+function makeShieldPickupSprite(size = 16){
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const g = c.getContext("2d");
+  g.imageSmoothingEnabled = false;
+
+  const METAL_D = "#3a3f4a";
+  const METAL_M = "#5a616f";
+  const METAL_L = "#80899a";
+	const CORE_1  = "#9fe7ff"; // antes casi blanco → ahora cian claro
+	const CORE_2  = "#4fcfff";
+	const CORE_3  = "#2a7cff";
+
+  g.clearRect(0,0,size,size);
+
+  const cx = (size/2)|0;
+  const cy = (size/2)|0;
+
+  const ring = [
+    [cx-5, cy-2, 10, 4, METAL_M],
+    [cx-4, cy-3,  8, 1, METAL_L],
+    [cx-4, cy+2,  8, 1, METAL_D],
+    [cx-2, cy-5,  4, 10, METAL_M],
+    [cx-1, cy-4,  1, 8,  METAL_L],
+    [cx+2, cy-4,  1, 8,  METAL_D],
+  ];
+  for (const [x,y,w,h,col] of ring){
+    g.fillStyle = col;
+    g.fillRect(x,y,w,h);
+  }
+
+	// --- núcleo energético (más grande) ---
+	const put = (x,y,col)=>{
+	  if (x>=0 && y>=0 && x<size && y<size){
+		g.fillStyle = col; g.fillRect(x,y,1,1);
+	  }
+	};
+
+	// centro (2x2)
+	put(cx,   cy,   CORE_1);
+	put(cx-1, cy,   CORE_1);
+	put(cx,   cy-1, CORE_1);
+	put(cx-1, cy-1, CORE_1);
+
+	// anillo interior (3x3 alrededor del centro)
+	for (const [dx,dy,col] of [
+	  [-2,-2,CORE_2],[-1,-2,CORE_2],[0,-2,CORE_2],[1,-2,CORE_2],
+	  [-2,-1,CORE_2],                      [1,-1,CORE_2],
+	  [-2, 0,CORE_2],                      [1, 0,CORE_2],
+	  [-2, 1,CORE_2],[-1, 1,CORE_2],[0, 1,CORE_2],[1, 1,CORE_2],
+	]){
+	  put(cx+dx, cy+dy, col);
+	}
+
+	// corona externa (más “energía”)
+	for (const [dx,dy] of [
+	  [-3,0],[3,0],[0,-3],[0,3],
+	  [-3,-1],[3,-1],[-3,1],[3,1],
+	  [-1,-3],[1,-3],[-1,3],[1,3],
+	]){
+	  put(cx+dx, cy+dy, CORE_3);
+	}
+
+
+  return c;
+}
+
+function drawShieldPickup(ctx, x, y, t, spriteCanvas){
+  const spr = spriteCanvas || (drawShieldPickup._spr ??= makeShieldPickupSprite(16));
+
+  // pulso más fuerte pero controlado
+  const pulse  = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 7.5));   // 0.55..1.0
+  const pulse2 = 0.60 + 0.40 * (0.5 + 0.5 * Math.sin(t * 3.6 + 1.3));
+
+  const baseScale = 2.35;
+  const sc = baseScale * (0.88 + 0.24 * pulse); // menos expansión para no “quemar” tanto
+
+  // halos (con blur real)
+  const haloR  = 18 + 9  * pulse;
+  const haloR2 = 10 + 10 * pulse2;
+
+  // 👉 alphas más bajos (el “lighter” quema si te pasas)
+  const haloA  = 0.06 + 0.16 * pulse;      // antes era demasiado
+  const haloA2 = 0.05 + 0.14 * pulse2;
+
+  const rot = 0.35 * Math.sin(t * 1.4);
+
+  ctx.save();
+
+    // ======================
+	// 1) HALO EXTERIOR (más visible)
+	// ======================
+	ctx.globalCompositeOperation = "lighter";
+
+	// pulso lento para halo grande
+	const slowPulse = 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(t * 2.2));
+
+	// radios más grandes
+	const haloOuter = 20 + 12 * slowPulse;   // 👈 MUCHO más grande
+	const haloMid   = 16 + 10 * pulse;       // anillo medio
+	const haloInner = 10 +  8 * pulse2;      // anillo interior
+
+	// --- Halo exterior grande (azul profundo) ---
+	ctx.globalAlpha = 0.22 * slowPulse;       // 👈 más alpha
+	ctx.shadowColor = "rgba(40,150,255,1)";
+	ctx.shadowBlur  = 18 + 12 * slowPulse;
+	ctx.fillStyle   = "rgba(40,150,255,0.22)";
+	ctx.beginPath();
+	ctx.arc(x, y, haloOuter, 0, Math.PI * 2);
+	ctx.fill();
+
+	// --- Halo medio (cian) ---
+	ctx.globalAlpha = 0.26 * pulse;
+	ctx.shadowColor = "rgba(90,200,255,1)";
+	ctx.shadowBlur  = 12 + 10 * pulse;
+	ctx.fillStyle   = "rgba(90,200,255,0.25)";
+	ctx.beginPath();
+	ctx.arc(x, y, haloMid, 0, Math.PI * 2);
+	ctx.fill();
+
+	// --- Halo interior (energía concentrada) ---
+	ctx.globalAlpha = 0.28 * pulse2;
+	ctx.shadowColor = "rgba(150,235,255,1)";
+	ctx.shadowBlur  = 8 + 8 * pulse2;
+	ctx.fillStyle   = "rgba(150,235,255,0.28)";
+	ctx.beginPath();
+	ctx.arc(x, y, haloInner, 0, Math.PI * 2);
+	ctx.fill();
+
+	// --- Chispas periféricas (leen muy bien en movimiento) ---
+	ctx.shadowBlur = 0;
+	ctx.globalAlpha = 0.35 * slowPulse;
+	ctx.fillStyle = "rgba(200,245,255,1)";
+	for (let i = 0; i < 12; i++){
+	  const a = (i / 12) * Math.PI * 2 + t * 0.4;
+	  const rr = haloOuter - 6;
+	  const px = x + Math.cos(a) * rr;
+	  const py = y + Math.sin(a) * rr;
+	  ctx.fillRect((px | 0), (py | 0), 1, 1);
+	}
+
+
+  // =========================================
+  // 2) SPRITE CENTRAL (NO additive -> NO blanco)
+  // =========================================
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+
+  ctx.translate(x|0, y|0);
+  ctx.rotate(rot);
+
+  const w = spr.width  * sc;
+  const h = spr.height * sc;
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(spr, (-w/2)|0, (-h/2)|0, w|0, h|0);
+
+  // highlight MUY sutil y NO blanco (si lo quieres, si no, bórralo)
+  ctx.globalAlpha = 0.06 + 0.10*pulse;
+  ctx.fillStyle = "rgba(160,225,255,1)";  // nada de 255,255,255
+  ctx.fillRect((-w*0.22)|0, (-h*0.22)|0, (w*0.16)|0, (h*0.16)|0);
+
+  ctx.restore();
+}
 
 
 function draw(){
+	
+	const tNow = performance.now() * 0.001;
+
     ctx.clearRect(0,0,W,H);
 
 	// SHAKE: mueve la “cámara” un instante tras crash
@@ -2495,7 +3066,6 @@ function draw(){
 	  drawCeilingSurface();
 	}
 	drawPlanetSurface();
-
 
 
     // asteroides
@@ -2552,13 +3122,19 @@ function draw(){
 	  ctx.fillStyle = "rgba(255,255,255,.55)";
 	  ctx.fillRect((l.x + 2)|0, (l.y)|0, (l.w - 6)|0, 1);
 	}
+	
+	// power-ups (solo cuando el juego está corriendo)
+	if (running){
+	  for (const p of pickups){
+		drawShieldPickup(ctx, p.x, p.y, tNow + p.t);
+	  }
+	}
 
     // Halcón
-	
 	if (running){
-		drawFalcon();
+	  drawFalcon();
+	  drawShieldPickupFX(ctx); // 👈 AQUÍ
 	}
-    
 
 
     // Debug hitboxes (H)
@@ -2618,8 +3194,6 @@ function draw(){
 	}
 
 
-
-
    // score pixel pequeño (arriba a la izquierda, translúcido)
 	if (running && !gameOver){
 	  const label = "SCORE:";
@@ -2651,6 +3225,7 @@ function draw(){
 	
 	drawParticles();
 	drawDebrisAndWrecks();
+	
 
 	// Aviso de fase (aparece y se desvanece)
 	if (!gameOver && phaseT > 0 && phaseMsg){
@@ -2696,6 +3271,62 @@ function draw(){
 
 
   }
+
+function drawShieldPickupFX(ctx){
+  if (!shieldPickupFX.length || !running) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.strokeStyle = "#7fd6ff";
+  ctx.fillStyle   = "#cfefff";
+
+  for (const e of shieldPickupFX){
+    const u = Math.min(1, Math.max(0, e.t / e.dur));
+    const ease = 1 - Math.pow(1 - u, 3); // easeOutCubic
+
+    if (e.kind === "ring" || e.kind === "ringSoft"){
+      const r = e.r0 + (e.r1 - e.r0) * ease;
+      const a = e.a0 + (e.a1 - e.a0) * u;
+
+      ctx.save();
+      ctx.globalAlpha = a;
+
+      ctx.lineWidth = (e.kind === "ring") ? 6 : 12;
+      ctx.shadowBlur = (e.kind === "ring") ? 22 : 34;
+
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // núcleo interior fino
+      ctx.globalAlpha = a * 0.55;
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 10;
+
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, r * 0.92, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    } else {
+      // spark
+      const a = e.a0 + (e.a1 - e.a0) * u;
+
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.shadowBlur = 14;
+
+      ctx.beginPath();
+      ctx.arc(e.x, e.y, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+  }
+
+  ctx.restore();
+}
+
 
 function drawFalcon(){
   ctx.save();
@@ -3033,6 +3664,12 @@ for (let f = 0; f < 2; f++){
   tie.push(c);
 }
 
+
+// (Opcional) Si quieres un dataURL PNG del sprite (p.ej. debug)
+function getShieldPickupDataURL(){
+  const c = makeShieldPickupSprite(16);
+  return c.toDataURL("image/png");
+}
 
 
   // Asteroides
