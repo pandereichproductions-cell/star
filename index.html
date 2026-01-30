@@ -897,8 +897,6 @@ function playCrash(){
   sfxCrash.play().catch(()=>{});
 }
 
-
-
 function playShieldUp(){
   if (!audioUnlocked || !audioEnabled) return;
 
@@ -2174,32 +2172,44 @@ function unlockAudio(){
       music.currentTime = 0;
     }
 
-    // Si abrimos desde file://, evitamos intentos de carga que disparan CORS
     const isFile = (location.protocol === "file:");
 
-    // 🔥 Precalentar FX HTMLAudio (solo si NO es file://)
-    if (!isFile){
-      laserPool.forEach(a => {
-        try { a.load(); } catch(e){}
-      });
+    // ✅ En iPhone evita precargar pools HTMLAudio (puede dar tirón)
+    // Si quieres mantenerlo en desktop, limítalo a NO iOS.
+    const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+
+    if (!isFile && !IS_IOS){
+      // Precalentar FX HTMLAudio (desktop)
+      try { laserPool.forEach(a => a.load()); } catch(e){}
       try { sfxCrash.load(); } catch(e){}
     }
 
-    // WebAudio FX (blindado)
+    // WebAudio FX
     try{
-      const ok = await initLaserWebAudio(); // devuelve true/false si aplicaste mi versión
-      if (ok && laserCtx && laserCtx.state === "suspended"){
-        laserCtx.resume().catch(()=>{});
+      const ok = await initLaserWebAudio();
+      if (ok && laserCtx){
+        if (laserCtx.state === "suspended"){
+          await laserCtx.resume().catch(()=>{});
+        }
+
+        // 🔥 Warm-up WebAudio (muy importante para iOS)
+        try{
+          const b = laserCtx.createBuffer(1, 128, laserCtx.sampleRate);
+          const src = laserCtx.createBufferSource();
+          src.buffer = b;
+          src.connect(sfxGain);
+          src.start(0);
+        }catch(e){}
       }
-    } catch(e){
-      // no hacemos nada: sin audio pero el juego sigue
+    }catch(e){
+      // sin audio pero el juego sigue
     }
 
   }).catch(() => {});
 
   return audioUnlockPromise;
 }
-
 
   function crash(){
     if (gameOver) return;
@@ -2713,7 +2723,7 @@ function maybeEnterPhase3(){
 			impactShake();
 			
             invulTimer = 60;
-            if (window.sfxCrash) sfxCrash.play();
+            //playShieldHit();
             a.dead = true; 
           } else {
             crash(); 
@@ -2736,7 +2746,7 @@ function maybeEnterPhase3(){
 			spawnMiniFX(ship.x, ship.y); // opcional, queda muy bien para “impacto”
 			impactShake();
             invulTimer = 60;
-            if (window.sfxCrash) sfxCrash.play();
+            //playShieldHit();
             t.dead = true; 
           } else {
             crash(); 
