@@ -3,7 +3,16 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Falcon Run – Asteroides & TIE</title>
+  <title>Flappy Falcon</title>
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
+	<link rel="icon" type="image/png" sizes="180x180" href="icon-180.png">
+
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-title" content="Flappy Falcon">
+	<meta name="apple-mobile-web-app-status-bar-style"
+		  content="black-translucent">
+
+<meta name="theme-color" content="#02030a">
   <style>
     :root{
       --bg1:#040510;
@@ -128,8 +137,9 @@ const BASE_W = 960;
 const BASE_H = 440;
 
 // ===== DEBUG / MODOS =====
-const GOD_SHIELDS = false;      // false = juego normal
+let GOD_SHIELDS = new URLSearchParams(location.search).has("god") || new URLSearchParams(location.search).has("invul"); // invulnerabilidad total: ?god=1, ?invul=1 o tecla 9
 const WARMUP_SECONDS = 3.0;     // segundos de ensayo inicial
+const DEBUG_START_PHASE4 = new URLSearchParams(location.search).has("phase4"); // prueba directa: abre el HTML con ?phase4=1
 
 // ===== ESTADO WARM-UP =====
 let inWarmup = false;
@@ -584,7 +594,7 @@ function stopMusic(){
 
 // --- HALCÓN: PNG embebido (tu imagen) + fondo negro transparente ---
 const falconImg = new Image();
-falconImg.src = "data:image/png;base64,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"
+falconImg.src = "data:image/png;base64,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"
 
 // --- PLANETA DE FONDO (fijo, difuso) ---
 const bgPlanetImg = new Image();
@@ -660,9 +670,57 @@ let phase3ScoreCarry = 0;           // acumulador para no sumar decimales sin co
 
 let phase3 = false;
 let enteringPhase3 = false;
+let exitingPhase3 = false;
+let phase4Warning = false;
+let phase4WarningT = 0;
+
 
 let spawnAsteroids = true;
 let spawnTies = true;
+
+// --- FASE 4 / JEFE GUSANO ---
+let phase4 = false;
+let bossDefeated = false;
+let bossIntroT = 0;
+let wormDeathActive = false;
+let wormDeathT = 0;
+let wormDeathBurstT = 0;
+let victoryMode = false;
+let victoryT = 0;
+let shipFrozenDuringBossDeath = false;
+let shipFreezeX = 0;
+let shipFreezeY = 0;
+const WORM_MAX_HP = 17; // mitad de vida para que el jefe muera antes
+const WORM_SCALE = 1.3; // Gusano 30% más grande.
+// Entrada cinematográfica del gusano: empieza menos lejos y entra más rápido desde la derecha.
+const WORM_SPAWN_X = BASE_W + 420;
+const WORM_TARGET_X = BASE_W - 160;
+const WORM_ENTER_SPEED = 180;
+// Fase 4: el ataque del gusano solo puede venir desde arriba o desde abajo.
+// Así el jugador puede leer el patrón y esquivarlo, no depende tanto del azar.
+const WORM_ATTACK_TOP_Y = 82;
+const WORM_ATTACK_BOTTOM_Y = BASE_H - 82;
+const WORM_ATTACK_MAX_NECK = BASE_W * 0.86;
+let wormHp = WORM_MAX_HP;
+const worm = {
+  active: false,
+  x: WORM_SPAWN_X,      // anclaje del cuerpo
+  y: BASE_H * 0.52,
+  t: 0,
+  mouthOpen: 64,
+  hurtT: 0,
+  defeatedT: 0,
+
+  // Ataque de cuello: la cabeza se proyecta hacia el Falcon cada cierto tiempo
+  neckExt: 0,
+  neckTarget: 0,
+  attackTimer: 0,
+  attackState: "idle",
+  attackStateT: 0,
+  attackSide: "bottom",
+  attackY: WORM_ATTACK_BOTTOM_Y,
+  targetY: BASE_H * 0.52
+};
 
 // offset vertical del suelo/techo durante la transición (en px)
 let floorOffsetY = 0;
@@ -671,6 +729,12 @@ let ceilingOffsetY = 0;
 // progreso 0..1 de la transición
 let tunnelT = 0;
 let tunnelDuration = 6; // segundos (ajusta)
+let exitTunnelT = 0;
+const EXIT_TUNNEL_DURATION = 4.2; // apertura de salida antes del boss
+let exitFloorStartOffsetY = 0;
+let exitCeilingStartOffsetY = 0;
+const BOSS_WARNING_SECONDS = 3.2;
+
 
 // --- Estrechamiento progresivo del túnel (FASE 3) ---
 let phase3StartX = 0;
@@ -731,6 +795,7 @@ function tunnelWaveY(xPx){
 function tunnelWaveFactor(){
   if (phase3) return 1;
   if (enteringPhase3) return easeInOut(tunnelT); // 0→1 según se forma el túnel
+  if (exitingPhase3) return 1 - easeInOut(exitTunnelT); // 1→0 al abrir la salida
   return 0;
 }
 
@@ -758,6 +823,7 @@ const PHASE1_RAMP_PX = 7000; // 5000–9000 suele ir bien
 
 const TIE_UNLOCK_DIST = 12000; // px de worldX; ajusta (4000–9000)
 const PHASE3_UNLOCK_DIST = 22000; // ajusta a gusto (debe ser > TIE_UNLOCK_DIST)
+const PHASE4_UNLOCK_DIST = PHASE3_UNLOCK_DIST + 16000; // fase 3 un poco más larga antes de abrir salida al boss
 
 let tPickup = 0;
 let nextPickup = 6.0;              // primer power-up tarda un poco
@@ -824,12 +890,12 @@ function ceilingY(x){
 
 // --- Suelo/techo efectivos (con offsets durante fase 3) ---
 function floorYEff(x){
-  const w = (enteringPhase3 || phase3) ? tunnelWaveY(x) * tunnelWaveFactor() : 0;
+  const w = (enteringPhase3 || phase3 || exitingPhase3) ? tunnelWaveY(x) * tunnelWaveFactor() : 0;
   return groundY(x) + floorOffsetY + w;
 }
 
 function ceilingYEff(x){
-  const w = (enteringPhase3 || phase3) ? tunnelWaveY(x) * tunnelWaveFactor() : 0;
+  const w = (enteringPhase3 || phase3 || exitingPhase3) ? tunnelWaveY(x) * tunnelWaveFactor() : 0;
   return ceilingY(x) + ceilingOffsetY + w;
 }
 
@@ -895,6 +961,279 @@ function playCrash(){
   // fallback por si aún no cargó (desktop / file://)
   sfxCrash.currentTime = 0;
   sfxCrash.play().catch(()=>{});
+}
+
+function playCrashOneShot(delay=0){
+  if (!audioEnabled || !audioUnlocked) return;
+
+  const fire = () => {
+    try{
+      if (laserCtx && explosionBuf){
+        const src = laserCtx.createBufferSource();
+        src.buffer = explosionBuf;
+        src.connect(sfxGain || laserCtx.destination);
+        src.start(0);
+        return;
+      }
+
+      const a = sfxCrash.cloneNode(true);
+      a.volume = Math.min(1, (sfxCrash.volume || 0.9) * 1.15);
+      a.currentTime = 0;
+      a.play().catch(()=>{});
+    }catch(e){}
+  };
+
+  if (delay > 0) setTimeout(fire, delay * 1000);
+  else fire();
+}
+
+
+// ===== FX GENERADOS POR CÓDIGO PARA EL BOSS =====
+let codeSfxCtx = null;
+let lastWormRoarSfx = 0;
+let lastTongueHitSfx = 0;
+let lastBodyHitSfx = 0;
+
+function getCodeSfxCtx(){
+  if (!audioEnabled || !audioUnlocked) return null;
+  try{
+    if (!codeSfxCtx){
+      codeSfxCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (codeSfxCtx.state === "suspended"){
+      codeSfxCtx.resume().catch(()=>{});
+    }
+    return codeSfxCtx;
+  }catch(e){
+    return null;
+  }
+}
+
+function makeNoiseBuffer(ctx, dur=0.25){
+  const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0; i<len; i++){
+    data[i] = (Math.random() * 2 - 1) * (1 - i/len);
+  }
+  return buf;
+}
+
+function playWormRoar(){
+  const nowMs = performance.now();
+  if (nowMs - lastWormRoarSfx < 1150) return;
+  lastWormRoarSfx = nowMs;
+
+  const ctx = getCodeSfxCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  // Rugido largo y sucio: ruido + grave + vibrato, pensado para el ataque real.
+  const noise = ctx.createBufferSource();
+  const nFilter = ctx.createBiquadFilter();
+  const nGain = ctx.createGain();
+  noise.buffer = makeNoiseBuffer(ctx, 1.18);
+  nFilter.type = "lowpass";
+  nFilter.frequency.setValueAtTime(720, now);
+  nFilter.frequency.exponentialRampToValueAtTime(145, now + 1.12);
+  nFilter.Q.value = 2.2;
+  nGain.gain.setValueAtTime(0.0001, now);
+  nGain.gain.exponentialRampToValueAtTime(0.95, now + 0.08);
+  nGain.gain.setValueAtTime(0.82, now + 0.52);
+  nGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.20);
+  noise.connect(nFilter);
+  nFilter.connect(nGain);
+  nGain.connect(ctx.destination);
+
+  const osc = ctx.createOscillator();
+  const mod = ctx.createOscillator();
+  const modGain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(78, now);
+  osc.frequency.exponentialRampToValueAtTime(31, now + 1.10);
+
+  mod.type = "sine";
+  mod.frequency.setValueAtTime(13, now);
+  modGain.gain.setValueAtTime(18, now);
+  mod.connect(modGain);
+  modGain.connect(osc.frequency);
+
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(260, now);
+  filter.frequency.exponentialRampToValueAtTime(70, now + 1.12);
+  filter.Q.value = 4.0;
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.72, now + 0.07);
+  gain.gain.setValueAtTime(0.60, now + 0.55);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.18);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  noise.start(now);
+  noise.stop(now + 1.22);
+  osc.start(now);
+  mod.start(now);
+  osc.stop(now + 1.22);
+  mod.stop(now + 1.22);
+}
+
+function playTongueHit(){
+  const nowMs = performance.now();
+  if (nowMs - lastTongueHitSfx < 120) return;
+  lastTongueHitSfx = nowMs;
+
+  const ctx = getCodeSfxCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  // Usa el FX anterior de ataque como impacto en lengua: grave, viscoso y reconocible.
+  const osc = ctx.createOscillator();
+  const mod = ctx.createOscillator();
+  const modGain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(112, now);
+  osc.frequency.exponentialRampToValueAtTime(39, now + 0.34);
+
+  mod.type = "sine";
+  mod.frequency.setValueAtTime(20, now);
+  modGain.gain.setValueAtTime(11, now);
+  mod.connect(modGain);
+  modGain.connect(osc.frequency);
+
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(360, now);
+  filter.frequency.exponentialRampToValueAtTime(95, now + 0.34);
+  filter.Q.value = 3.0;
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.62, now + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(now);
+  mod.start(now);
+  osc.stop(now + 0.40);
+  mod.stop(now + 0.40);
+}
+
+function playWormBodyHit(){
+  const nowMs = performance.now();
+  if (nowMs - lastBodyHitSfx < 90) return;
+  lastBodyHitSfx = nowMs;
+
+  const ctx = getCodeSfxCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime;
+
+  const src = ctx.createBufferSource();
+  const filter = ctx.createBiquadFilter();
+  const gain = ctx.createGain();
+
+  src.buffer = makeNoiseBuffer(ctx, 0.10);
+  filter.type = "lowpass";
+  filter.frequency.setValueAtTime(520, now);
+  filter.frequency.exponentialRampToValueAtTime(130, now + 0.10);
+
+  gain.gain.setValueAtTime(0.42, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+
+  src.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+  src.start(now);
+  src.stop(now + 0.13);
+}
+
+function playCodeExplosion(delay=0, heavy=false){
+  const ctx = getCodeSfxCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime + delay;
+
+  const noise = ctx.createBufferSource();
+  const nFilter = ctx.createBiquadFilter();
+  const nGain = ctx.createGain();
+  noise.buffer = makeNoiseBuffer(ctx, heavy ? 0.48 : 0.32);
+  nFilter.type = "lowpass";
+  nFilter.frequency.setValueAtTime(heavy ? 900 : 680, now);
+  nFilter.frequency.exponentialRampToValueAtTime(90, now + (heavy ? 0.46 : 0.30));
+  nGain.gain.setValueAtTime(0.0001, now);
+  nGain.gain.exponentialRampToValueAtTime(heavy ? 0.82 : 0.58, now + 0.015);
+  nGain.gain.exponentialRampToValueAtTime(0.0001, now + (heavy ? 0.50 : 0.34));
+  noise.connect(nFilter);
+  nFilter.connect(nGain);
+  nGain.connect(ctx.destination);
+  noise.start(now);
+  noise.stop(now + (heavy ? 0.52 : 0.36));
+
+  const boom = ctx.createOscillator();
+  const bGain = ctx.createGain();
+  boom.type = "sine";
+  boom.frequency.setValueAtTime(heavy ? 82 : 110, now);
+  boom.frequency.exponentialRampToValueAtTime(heavy ? 24 : 38, now + 0.34);
+  bGain.gain.setValueAtTime(0.0001, now);
+  bGain.gain.exponentialRampToValueAtTime(heavy ? 0.70 : 0.48, now + 0.02);
+  bGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.38);
+  boom.connect(bGain);
+  bGain.connect(ctx.destination);
+  boom.start(now);
+  boom.stop(now + 0.40);
+}
+
+function playAlienScream(delay=0){
+  const ctx = getCodeSfxCtx();
+  if (!ctx) return;
+  const now = ctx.currentTime + delay;
+
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  const filter = ctx.createBiquadFilter();
+
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(440 + Math.random()*120, now);
+  osc.frequency.exponentialRampToValueAtTime(62 + Math.random()*25, now + 0.46);
+
+  filter.type = "bandpass";
+  filter.frequency.setValueAtTime(950, now);
+  filter.frequency.exponentialRampToValueAtTime(180, now + 0.46);
+  filter.Q.value = 6;
+
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.42, now + 0.025);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.50);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  gain.connect(ctx.destination);
+
+  osc.start(now);
+  osc.stop(now + 0.52);
+}
+
+function playWormDeathSfx(){
+  playWormRoar();
+
+  // Más crashes clásicos durante la muerte, mezclados con explosiones y gritos.
+  for (let i=0; i<14; i++){
+    const d = i * 0.105;
+    playCodeExplosion(d, i % 3 === 0 || i === 13);
+    playCrashOneShot(d + 0.018);
+    if (i % 2 === 0) playCrashOneShot(d + 0.072);
+    if (i < 9) playAlienScream(0.045 + i * 0.135);
+  }
+  playCrashOneShot(1.58);
+  playCrashOneShot(1.78);
 }
 
 function playShieldUp(){
@@ -1008,7 +1347,7 @@ function drawCeilingSurface(){
     wave = Math.round(wave / TERRACE) * TERRACE;
 
     let y = 34 + (rockEdgeAt(ix) * 0.9) + (wave * 0.6) + ceilingOffsetY;
-    if (enteringPhase3 || phase3) y += tunnelWaveY(xPx) * tunnelWaveFactor();
+    if (enteringPhase3 || phase3 || exitingPhase3) y += tunnelWaveY(xPx) * tunnelWaveFactor();
 
 
     y = Math.round(y / LOW_SCALE) * LOW_SCALE;
@@ -1100,7 +1439,7 @@ function drawPlanetSurface(){
   wave = Math.round(wave / TERRACE) * TERRACE;
 
   let y = GROUND_Y + rockEdgeAt(ix) + wave + floorOffsetY;
-  if (enteringPhase3 || phase3) y += tunnelWaveY(xPx) * tunnelWaveFactor();
+  if (enteringPhase3 || phase3 || exitingPhase3) y += tunnelWaveY(xPx) * tunnelWaveFactor();
 
   y = Math.round(y / LOW_SCALE) * LOW_SCALE;
   return y;
@@ -1221,6 +1560,7 @@ function initStars(){
   const asteroids = [];
   const ties = [];
   const lasers = []; // disparos enemigos
+  const bossLasers = []; // disparos del Falcon en fase 4
   const pickups = [];
 
   // Spawns
@@ -1273,6 +1613,14 @@ function reset(){
 
     running = true;
     gameOver = false;
+    wormDeathActive = false;
+    wormDeathT = 0;
+    wormDeathBurstT = 0;
+    victoryMode = false;
+    victoryT = 0;
+    shipFrozenDuringBossDeath = false;
+    shipFreezeX = 0;
+    shipFreezeY = 0;
     score = 0;
     scoreEl.textContent = "0";
 	
@@ -1311,6 +1659,9 @@ function reset(){
 	  shakeAmp = 0;
 	  flashT = 0;
 	  // Fases
+	  phase4 = false;
+	  bossDefeated = false;
+	  worm.active = false;
 	  phase2Shown = false;
 	  phase2AstBase = 0;
 	  phase2AstLocked = false;
@@ -1318,6 +1669,10 @@ function reset(){
 		// --- Reset fase 3 / túnel ---
 	  phase3 = false;
 	  enteringPhase3 = false;
+	  exitingPhase3 = false;
+	  phase4Warning = false;
+	  phase4WarningT = 0;
+	  exitTunnelT = 0;
 	  spawnAsteroids = true;
 	  spawnTies = true;
 	  floorOffsetY = 0;
@@ -1336,6 +1691,12 @@ function reset(){
 	tAst = -phaseDur;  // mantiene asteroides a raya mientras dura el cartel/ensayo
 	tTie = -phaseDur;  // idem ties (por si acaso)
 
+	// DEBUG URL: abre el archivo con ?phase4=1 para probar directamente el jefe.
+	if (DEBUG_START_PHASE4){
+	  inWarmup = false;
+	  enterPhase4(true);
+	}
+
 
   
   if (audioEnabled){
@@ -1348,10 +1709,15 @@ function reset(){
 }
 
   function thrust(){
+    // Final ganado o jefe muriendo: bloquea clicks/taps/espacio para no reiniciar ni mover la nave.
+    // Solo se reinicia con la tecla R cuando ya ha salido CONGRATULATIONS.
+    if (victoryMode || wormDeathActive || shipFrozenDuringBossDeath) return;
+
     if (!running) reset();
     if (gameOver && canRestart) { reset(); return; }
     ship.vy = -thrustV;
     ship.engineFlash = 15;
+    if (phase4) fireFalconLaser();
   }
   
   
@@ -1371,8 +1737,14 @@ function reset(){
     }
 
     // Fase 3: entrar en tunel/asteroide
-    if (e.key === "3" && !phase3 && !enteringPhase3){
+    if (e.key === "3" && !phase3 && !enteringPhase3 && !phase4){
       beginPhase3();
+    }
+
+    // Fase 4: jefe gusano directamente
+    if (e.key === "4"){
+      if (!running) reset();
+      enterPhase4(true);
     }
   });
 
@@ -1380,6 +1752,7 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "Space") {
 	e.preventDefault();
 	
+	if (wormDeathActive || shipFrozenDuringBossDeath) return;
 	unlockAudio().then(() => {
     if (!musicStarted && !gameOver) {
       startMusic();
@@ -1394,6 +1767,14 @@ window.addEventListener("keydown", (e) => {
 	reset();
   }
 
+  // Toggle Modo Dios (9): invulnerabilidad total ON/OFF durante la partida
+  if (e.key === "9" || e.code === "Digit9" || e.code === "Numpad9") {
+    e.preventDefault();
+    GOD_SHIELDS = !GOD_SHIELDS;
+    if (GOD_SHIELDS) shields = Math.max(shields, 2);
+    showPhase(GOD_SHIELDS ? "MODO DIOS ON" : "MODO DIOS OFF", 1.8);
+  }
+
 
   // Toggle hitboxes (H)
   if (e.code === "KeyH") {
@@ -1403,6 +1784,10 @@ window.addEventListener("keydown", (e) => {
 }, { passive:false });
 
 canvas.addEventListener("pointerdown", () => {
+  // Tras CONGRATULATIONS o durante la muerte del boss, los clicks/taps quedan bloqueados.
+  // Evita reinicios accidentales y deja la nave flotando.
+  if (victoryMode || wormDeathActive || shipFrozenDuringBossDeath) return;
+
   unlockAudio().then(() => {
     if (!musicStarted && !gameOver) {
       startMusic();
@@ -2164,6 +2549,7 @@ function unlockAudio(){
   if (audioUnlockPromise) return audioUnlockPromise;
 
   audioUnlocked = true;
+  try { getCodeSfxCtx(); } catch(e){}
 
   audioUnlockPromise = music.play().then(async () => {
     // Pausar si no toca música
@@ -2212,7 +2598,14 @@ function unlockAudio(){
 }
 
   function crash(){
-    if (gameOver) return;
+    if (gameOver || wormDeathActive || shipFrozenDuringBossDeath || victoryMode) return;
+
+    // Modo Dios: no permite muerte por asteroides, TIE, láseres, suelo/techo, túnel o boss.
+    if (GOD_SHIELDS) {
+      invulTimer = Math.max(invulTimer, 20);
+      spawnMiniFX(ship.x, ship.y);
+      return;
+    }
 	
 	playCrash();
 	stopMusic();
@@ -2312,13 +2705,825 @@ function updateTunnelTransition(dt){
   }
 }
 
+function beginExitToPhase4(){
+  if (exitingPhase3 || phase4Warning || phase4 || bossDefeated) return;
+
+  // Salida del interior del asteroide: abre techo/suelo como reverso de la entrada.
+  phase3 = false;
+  enteringPhase3 = false;
+  exitingPhase3 = true;
+  exitTunnelT = 0;
+
+  spawnAsteroids = false;
+  spawnTies = false;
+  asteroids.length = 0;
+  ties.length = 0;
+  lasers.length = 0;
+  pickups.length = 0;
+  tAst = 0;
+  tTie = 0;
+
+  // La fase 4 empieza visualmente en cuanto el asteroide empieza a abrirse.
+  // El aviso aparece durante la apertura; el gusano entra cuando termina la transición.
+  phase4Warning = true;
+  phase4WarningT = EXIT_TUNNEL_DURATION + 0.45;
+  showPhase("PELIGRO. FORMA DE VIDA DESCONOCIDA", BOSS_WARNING_SECONDS);
+
+  exitFloorStartOffsetY = floorOffsetY;
+  exitCeilingStartOffsetY = ceilingOffsetY;
+}
+
+function updateTunnelExit(dt){
+  if (!exitingPhase3) return;
+
+  exitTunnelT = Math.min(1, exitTunnelT + dt / EXIT_TUNNEL_DURATION);
+  const k = easeInOut(exitTunnelT);
+
+  // Suelo vuelve a su posición exterior y techo sube fuera de pantalla.
+  floorOffsetY = lerp(exitFloorStartOffsetY, 0, k);
+  ceilingOffsetY = lerp(exitCeilingStartOffsetY, -H - 80, k);
+
+  if (exitTunnelT >= 1){
+    exitingPhase3 = false;
+    // A partir de aquí el asteroide ya está totalmente abierto.
+    // El update principal congelará worldX para que suelo y estrellas queden parados
+    // exactamente desde este momento, no antes.
+    floorOffsetY = 0;
+    ceilingOffsetY = -H - 80;
+
+    // El aviso ya se lanzó al empezar la apertura.
+    // Ahora solo esperamos a que updatePhase4Warning dé paso al boss.
+  }
+}
+
+function updatePhase4Warning(dt){
+  if (!phase4Warning) return;
+
+  spawnAsteroids = false;
+  spawnTies = false;
+  asteroids.length = 0;
+  ties.length = 0;
+  lasers.length = 0;
+  pickups.length = 0;
+  tAst = 0;
+  tTie = 0;
+
+  phase4WarningT -= dt;
+  if (phase4WarningT <= 0 && !exitingPhase3){
+    phase4Warning = false;
+    enterPhase4(false);
+  }
+}
+
+
+function enterPhase4(debug=false){
+  // Limpieza total de enemigos: la fase 4 es solo Falcon vs gusano
+  phase3 = false;
+  enteringPhase3 = false;
+  exitingPhase3 = false;
+  phase4Warning = false;
+  phase4 = true;
+  bossDefeated = false;
+  wormDeathActive = false;
+  wormDeathT = 0;
+  wormDeathBurstT = 0;
+  victoryMode = false;
+  victoryT = 0;
+  shipFrozenDuringBossDeath = false;
+  shipFreezeX = 0;
+  shipFreezeY = 0;
+  bossIntroT = 999; // se desactiva cuando el gusano termina de entrar
+
+  spawnAsteroids = false;
+  spawnTies = false;
+
+  asteroids.length = 0;
+  ties.length = 0;
+  lasers.length = 0;
+  pickups.length = 0;
+  bossLasers.length = 0;
+
+  // No reiniciamos worldX: el suelo y las estrellas mantienen continuidad.
+  floorOffsetY = 0;
+  ceilingOffsetY = -H - 80;
+
+  wormHp = WORM_MAX_HP;
+  worm.active = true;
+  worm.x = WORM_SPAWN_X;
+  worm.y = H * 0.52;
+  worm.t = 0;
+  worm.mouthOpen = 38;
+  worm.hurtT = 0;
+  worm.defeatedT = 0;
+  worm.neckExt = 0;
+  worm.neckTarget = 0;
+  worm.attackTimer = 1.7;
+  worm.attackState = "idle";
+  worm.attackStateT = 0;
+  worm.attackSide = Math.random() < 0.5 ? "top" : "bottom";
+  worm.attackY = worm.attackSide === "top" ? WORM_ATTACK_TOP_Y : WORM_ATTACK_BOTTOM_Y;
+  worm.targetY = H * 0.52;
+
+  // No recolocamos la nave al entrar desde la fase 3: mantiene continuidad visual.
+  // Solo la ponemos en una posición cómoda si entras directamente con debug (?phase4=1 o tecla 4).
+  if (debug){
+    ship.x = 210;
+    ship.y = H * 0.48;
+    ship.vy = 0;
+    showPhase("DEBUG FASE 4", 2.6);
+  }
+}
+
+function maybeEnterPhase4(){
+  if (inWarmup || phase4 || exitingPhase3 || phase4Warning || bossDefeated) return;
+  if (!phase3) return;
+  if (worldX < PHASE4_UNLOCK_DIST) return;
+  beginExitToPhase4();
+}
+
+function fireFalconLaser(){
+  if (!phase4 || !running || gameOver || !worm.active || wormDeathActive || victoryMode) return;
+
+  bossLasers.push({
+    x: ship.x + 34,
+    y: ship.y - 1,
+    vx: 720,
+    w: 34,
+    h: 4,
+    life: 1.4,
+    alive: true
+  });
+
+  playLaser();
+}
+
+function damageShipByBoss(){
+  if (wormDeathActive || shipFrozenDuringBossDeath || victoryMode) return false;
+  if (GOD_SHIELDS) {
+    invulTimer = Math.max(invulTimer, 20);
+    return false;
+  }
+  if (invulTimer > 0) return false;
+
+  if (shields > 0){
+    if (!GOD_SHIELDS) shields--;
+    showShieldLoss();
+    spawnHitScreenFX(shields === 1 ? 1.15 : 1.0);
+    spawnMiniFX(ship.x, ship.y);
+    impactShake();
+    invulTimer = 60;
+    return false;
+  }
+
+  crash();
+  return true;
+}
+
+function wormHeadX(){
+  return worm.x - worm.neckExt;
+}
+
+function wormMouthWeakBox(){
+  // Zona débil: centro profundo de la boca. Tocar cabeza, dientes o mandíbula no quita vida.
+  const hx = wormHeadX();
+  const open = worm.mouthOpen;
+  const s = WORM_SCALE;
+  return {
+    x: hx - 122 * s,
+    y: worm.y - Math.max(12, open * 0.24) * s,
+    w: 42 * s,
+    h: Math.max(24, open * 0.48) * s
+  };
+}
+
+function wormMouthVoidBox(){
+  // Hueco oscuro de la boca: permite que el láser entre antes de decidir daño.
+  const hx = wormHeadX();
+  const open = worm.mouthOpen;
+  const s = WORM_SCALE;
+  return {
+    x: hx - 164 * s,
+    y: worm.y - Math.max(10, open - 12) * s,
+    w: 88 * s,
+    h: Math.max(20, open * 2 - 24) * s
+  };
+}
+
+function laserTip(l){
+  return { x: l.x + l.w, y: l.y };
+}
+
+function pointInRect(px, py, r){
+  return px > r.x && px < r.x + r.w && py > r.y && py < r.y + r.h;
+}
+
+function hitWormWeakMouth(l){
+  const tip = laserTip(l);
+  return pointInRect(tip.x, tip.y, wormMouthWeakBox());
+}
+
+function hitWormSolid(l){
+  // Impacto visual con cualquier parte sólida del gusano.
+  // Excluimos el hueco oscuro de la boca para que el láser pueda entrar hasta el centro.
+  const tip = laserTip(l);
+  const px = tip.x, py = tip.y;
+  const hx = wormHeadX();
+  const open = worm.mouthOpen;
+  const mouthVoid = wormMouthVoidBox();
+
+  if (pointInRect(px, py, mouthVoid)) return false;
+
+  const s = WORM_SCALE;
+  const inHeadBox = px > hx - 158*s && px < hx + 30*s && py > worm.y - 104*s && py < worm.y + 106*s;
+  const inUpperJaw = px > hx - 170*s && px < hx - 52*s && py > worm.y - (open + 36)*s && py < worm.y + (-open + 2)*s;
+  const inLowerJaw = px > hx - 170*s && px < hx - 52*s && py > worm.y + (open - 2)*s && py < worm.y + (open + 38)*s;
+  const inNeck = px > hx + 18*s && px < worm.x + 96*s && Math.abs(py - worm.y) < 78*s;
+  const inBody = px > worm.x + 45*s && px < worm.x + 420*s && Math.abs(py - worm.y) < 74*s;
+
+  return inHeadBox || inUpperJaw || inLowerJaw || inNeck || inBody;
+}
+
+function updateFalconLasers(dt){
+  // Durante la muerte del boss o la pantalla final no debe quedar ningún láser activo.
+  // Esto evita que un láser siga evaluando hitboxes después de que defeatWorm() vacíe el array.
+  if (wormDeathActive || victoryMode){
+    bossLasers.length = 0;
+    return;
+  }
+
+  for (let i = bossLasers.length - 1; i >= 0; i--){
+    const l = bossLasers[i];
+    if (!l){
+      bossLasers.splice(i, 1);
+      continue;
+    }
+
+    l.x += l.vx * dt;
+    l.life -= dt;
+
+    if (worm.active){
+      const weakHit = hitWormWeakMouth(l);
+      const solidHit = hitWormSolid(l);
+
+      if (weakHit || solidHit){
+        bossLasers.splice(i, 1);
+        spawnMiniFX(l.x + l.w, l.y);
+
+        if (weakHit){
+          playTongueHit();
+          wormHp = Math.max(0, wormHp - 1);
+          worm.hurtT = 0.13;
+          score += 0.35;
+          if (wormHp <= 0){
+            defeatWorm();
+            return;
+          }
+        } else {
+          // Impacto en piel/mandíbula/cuerpo: se ve el choque, pero no baja vida.
+          playWormBodyHit();
+          shakeT = Math.max(shakeT, 0.035);
+          shakeAmp = Math.max(shakeAmp, 1.2);
+        }
+        continue;
+      }
+    }
+
+    if (l.life <= 0 || l.x > W + 80){
+      bossLasers.splice(i, 1);
+    }
+  }
+}
+
+function updateWormBoss(dt){
+  if (wormDeathActive){ updateWormDeath(dt); return; }
+  if (!phase4 || !worm.active || victoryMode) return;
+
+  worm.t += dt;
+  if (worm.hurtT > 0) worm.hurtT = Math.max(0, worm.hurtT - dt);
+  // Entrada desde la derecha: aparece poco a poco, sin corte brusco.
+  const targetX = WORM_TARGET_X;
+  if (worm.x > targetX){
+    worm.x = Math.max(targetX, worm.x - WORM_ENTER_SPEED * dt);
+    bossIntroT = 999; // mientras entra no ataca ni hace daño
+  } else {
+    bossIntroT = 0;
+  }
+
+  // Patrón más justo: el gusano prepara el ataque pegado arriba o abajo, nunca desde el centro.
+  const idleY = H * 0.52 + Math.sin(worm.t * 1.05) * 34 + Math.sin(worm.t * 0.43) * 14;
+  if (worm.attackState === "idle" || bossIntroT > 0){
+    worm.targetY = idleY;
+  } else {
+    worm.targetY = worm.attackY;
+  }
+  const yFollow = 1 - Math.exp(-dt * (worm.attackState === "windup" ? 4.5 : 6.5));
+  worm.y = lerp(worm.y, worm.targetY, yFollow);
+
+  // Ataque periódico de cuello desde techo o suelo.
+  if (bossIntroT <= 0 && worm.x <= targetX + 2){
+    worm.attackTimer -= dt;
+    worm.attackStateT += dt;
+
+    if (worm.attackState === "idle" && worm.attackTimer <= 0){
+      worm.attackSide = Math.random() < 0.5 ? "top" : "bottom";
+      worm.attackY = worm.attackSide === "top" ? WORM_ATTACK_TOP_Y : WORM_ATTACK_BOTTOM_Y;
+      worm.attackState = "windup";
+      worm.attackStateT = 0;
+      worm.neckTarget = 0;
+    }
+
+    if (worm.attackState === "windup"){
+      worm.neckTarget = 0;
+      if (worm.attackStateT >= 0.92){
+        // Ataque largo: cruza casi toda la pantalla, pero al venir de arriba/abajo se puede esquivar.
+        worm.neckTarget = clamp((worm.x - ship.x) + 80, W * 0.62, WORM_ATTACK_MAX_NECK);
+        worm.attackState = "lunge";
+        worm.attackStateT = 0;
+        playWormRoar();
+      }
+    } else if (worm.attackState === "lunge"){
+      if (worm.attackStateT >= 0.68){
+        worm.attackState = "hold";
+        worm.attackStateT = 0;
+      }
+    } else if (worm.attackState === "hold"){
+      if (worm.attackStateT >= 0.58){
+        worm.attackState = "retract";
+        worm.attackStateT = 0;
+        worm.neckTarget = 0;
+      }
+    } else if (worm.attackState === "retract"){
+      if (worm.attackStateT >= 0.86){
+        worm.attackState = "idle";
+        worm.attackStateT = 0;
+        worm.attackTimer = rand(1.9, 2.8);
+      }
+    }
+  }
+
+  const neckSpeed = worm.attackState === "lunge" ? 1500 : 720;
+  const dNeck = worm.neckTarget - worm.neckExt;
+  worm.neckExt += clamp(dNeck, -neckSpeed * dt, neckSpeed * dt);
+  if (Math.abs(worm.neckExt) < 0.5 && worm.neckTarget === 0) worm.neckExt = 0;
+
+  // Mandíbula: más abierta en windup/lunge, y cierre brusco al mantener el ataque.
+  let baseBite = 0.5 + 0.5 * Math.sin(worm.t * 3.0);
+  if (worm.attackState === "windup") baseBite = 1;
+  if (worm.attackState === "lunge") baseBite = 0.9;
+  if (worm.attackState === "hold") baseBite = 0.25;
+  const snap = Math.pow(baseBite, 2.1);
+  worm.mouthOpen = 20 + 38 * snap;
+
+  // Colisión contra cabeza/cuerpo/mandíbulas. Durante la intro damos un respiro.
+  if (bossIntroT > 0) return;
+
+  const sx = ship.x, sy = ship.y, sr = ship.r;
+  const hx = wormHeadX();
+  const mouthY = worm.y;
+  const open = worm.mouthOpen;
+
+  // Mandíbulas delante de la cabeza. No cubren el hueco central: se puede disparar dentro.
+  const s = WORM_SCALE;
+  const inMouthX = sx + sr > hx - 174*s && sx - sr < hx - 42*s;
+  const hitsUpperJaw = inMouthX && sy - sr < mouthY - open * 0.40 * s && sy + sr > mouthY - (open + 22) * s;
+  const hitsLowerJaw = inMouthX && sy + sr > mouthY + open * 0.40 * s && sy - sr < mouthY + (open + 22) * s;
+
+  // Cabeza orgánica aproximada y cuello extendido, escalados con el gusano.
+  const hitsHead = circleHit(sx, sy, sr, hx - 54*s, worm.y, 68*s) || circleHit(sx, sy, sr, hx - 8*s, worm.y, 54*s);
+  const hitsNeck = (
+    sx + sr > hx + 20*s &&
+    sx - sr < worm.x + 80*s &&
+    Math.abs(sy - worm.y) < 78*s
+  );
+  const hitsBody = (
+    sx + sr > worm.x + 45*s &&
+    sx - sr < worm.x + 355*s &&
+    Math.abs(sy - worm.y) < 70*s
+  );
+
+  if (hitsUpperJaw || hitsLowerJaw || hitsHead || hitsNeck || hitsBody){
+    damageShipByBoss();
+  }
+}
+
+function spawnWormDeathBurst(finalBurst=false){
+  const hx = wormHeadX();
+  const s = WORM_SCALE;
+  const points = [
+    {x: hx - 110*s, y: worm.y - 42*s},
+    {x: hx - 70*s,  y: worm.y + 32*s},
+    {x: hx + 28*s,  y: worm.y - 18*s},
+    {x: worm.x + 30*s,  y: worm.y + 18*s},
+    {x: worm.x + 130*s, y: worm.y - 38*s},
+    {x: worm.x + 230*s, y: worm.y + 24*s},
+    {x: worm.x + 330*s, y: worm.y - 10*s}
+  ];
+
+  const count = finalBurst ? points.length : 2;
+  for (let i=0; i<count; i++){
+    const p = finalBurst ? points[i] : points[(Math.random() * points.length) | 0];
+    spawnExplosion(p.x + rand(-18,18), p.y + rand(-18,18));
+  }
+
+  shakeT = Math.max(shakeT, finalBurst ? 0.45 : 0.22);
+  shakeAmp = Math.max(shakeAmp, finalBurst ? 18 : 12);
+  flashT = Math.max(flashT, finalBurst ? 0.22 : 0.10);
+}
+
+function updateWormDeath(dt){
+  if (!wormDeathActive) return;
+
+  wormDeathT += dt;
+  wormDeathBurstT -= dt;
+  worm.hurtT = Math.max(worm.hurtT, 0.08);
+
+  // Pequeña deriva de la cabeza y cuello mientras explota.
+  worm.y += Math.sin(wormDeathT * 18) * 0.20;
+  worm.neckExt = Math.max(0, worm.neckExt - 80 * dt);
+
+  if (wormDeathBurstT <= 0 && wormDeathT < 2.55){
+    wormDeathBurstT = 0.18;
+    spawnWormDeathBurst(false);
+  }
+
+  if (wormDeathT >= 2.75){
+    spawnWormDeathBurst(true);
+    wormDeathActive = false;
+    worm.active = false;
+    phase4 = false;
+    victoryMode = true;
+    victoryT = 0;
+    showPhase("", 0);
+    bossLasers.length = 0;
+  }
+}
+
+function defeatWorm(){
+  if (!phase4 || wormDeathActive || victoryMode) return;
+  bossDefeated = true;
+  wormDeathActive = true;
+  shipFrozenDuringBossDeath = true;
+  shipFreezeX = ship.x;
+  shipFreezeY = ship.y;
+  ship.vy = 0;
+  ship.engineFlash = 0;
+  wormDeathT = 0;
+  wormDeathBurstT = 0;
+  bossLasers.length = 0;
+  score += 20;
+  playWormDeathSfx();
+  spawnWormDeathBurst(true);
+  impactShake();
+}
+
+function drawFalconLasers(){
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const l of bossLasers){
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = "rgb(255,45,45)";
+    ctx.fillStyle = "rgba(255,45,45,.38)";
+    ctx.fillRect((l.x - 5)|0, (l.y - 5)|0, (l.w + 10)|0, 10);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgb(255,35,35)";
+    ctx.fillRect(l.x|0, (l.y - 2)|0, l.w|0, 4);
+    ctx.fillStyle = "rgba(255,230,230,.82)";
+    ctx.fillRect((l.x + 4)|0, l.y|0, (l.w - 8)|0, 1);
+  }
+  ctx.restore();
+}
+
+function drawWormBoss(){
+  if (!worm.active) return;
+
+  const bossLayer = drawWormBoss._layer || (drawWormBoss._layer = document.createElement("canvas"));
+  if (bossLayer.width !== W || bossLayer.height !== H){
+    bossLayer.width = W;
+    bossLayer.height = H;
+  }
+  const g = bossLayer.getContext("2d");
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, bossLayer.width, bossLayer.height);
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = "source-over";
+
+  const bodyX = worm.x | 0;
+  const hx = wormHeadX() | 0;
+  const y = worm.y | 0;
+  const open = worm.mouthOpen | 0;
+  const hurt = worm.hurtT > 0;
+
+  g.save();
+  g.imageSmoothingEnabled = false;
+  if (wormDeathActive){
+    g.globalAlpha = Math.max(0, 1 - wormDeathT / 2.75);
+  }
+
+  // Escala global del boss: 1.3 = 30% más grande.
+  g.translate(hx, y);
+  g.scale(WORM_SCALE, WORM_SCALE);
+  g.translate(-hx, -y);
+
+  // Sombra enorme.
+  g.globalAlpha = 0.35;
+  g.fillStyle = "#000";
+  g.beginPath();
+  g.ellipse(bodyX + 175, y + 82, 285, 34, 0, 0, Math.PI*2);
+  g.fill();
+  g.globalAlpha = 1;
+
+  // Cuerpo segmentado a la derecha.
+  for (let i = 8; i >= 0; i--){
+    const sx = bodyX + i * 42;
+    const sy = y + Math.sin(worm.t * 2.0 + i * 0.75) * 18;
+    const h = 124 - i * 3;
+    g.fillStyle = hurt ? "#b77a58" : (i % 2 ? "#6b3f2a" : "#7a4a32");
+    g.fillRect(sx, (sy - h/2)|0, 46, h|0);
+    g.fillStyle = "rgba(0,0,0,.28)";
+    g.fillRect(sx + 33, (sy - h/2 + 5)|0, 8, (h - 10)|0);
+    g.fillStyle = "rgba(255,220,160,.12)";
+    g.fillRect(sx + 4, (sy - h/2 + 8)|0, 7, (h - 18)|0);
+  }
+
+  // Cuello extensible, por segmentos, entre cuerpo y cabeza.
+  const neckStart = bodyX + 42;
+  const neckEnd = hx + 38;
+  const neckLen = Math.max(20, neckStart - neckEnd);
+  const segs = Math.max(3, Math.ceil(neckLen / 34));
+  for (let i = 0; i < segs; i++){
+    const k = i / Math.max(1, segs - 1);
+    const sx = neckStart - k * neckLen;
+    const sy = y + Math.sin(worm.t * 2.4 + i * 0.85) * 9;
+
+    // Cuello mucho más ancho: casi del tamaño de la cabeza, para que no parezca una tubería fina.
+    const h = 136 - Math.min(12, i * 1.4);
+    const ww = 104 - Math.min(12, i * 1.2);
+
+    g.fillStyle = hurt ? "#b77a58" : (i % 2 ? "#74452e" : "#875239");
+    g.fillRect((sx - ww/2)|0, (sy - h/2)|0, ww|0, h|0);
+
+    // Placa lateral oscura y brillo suave para dar volumen sin marcar una caja transparente.
+    g.fillStyle = "rgba(0,0,0,.22)";
+    g.fillRect((sx + ww/2 - 15)|0, (sy - h/2 + 8)|0, 8, (h - 16)|0);
+    g.fillStyle = "rgba(255,220,160,.10)";
+    g.fillRect((sx - ww/2 + 8)|0, (sy - h/2 + 10)|0, 7, (h - 20)|0);
+  }
+
+  // Cabeza más orgánica: construida por capas pixeladas, no como un bloque único.
+  const skin = hurt ? "#b98260" : "#8a5738";
+  const skin2 = hurt ? "#c08b68" : "#9d6644";
+  const dark = "rgba(0,0,0,.24)";
+
+  g.fillStyle = skin;
+  g.fillRect(hx - 92, y - 104, 76, 16);
+  g.fillRect(hx - 122, y - 88, 138, 24);
+  g.fillRect(hx - 146, y - 64, 174, 42);
+  g.fillRect(hx - 158, y - 22, 188, 44);
+  g.fillRect(hx - 146, y + 22, 170, 42);
+  g.fillRect(hx - 124, y + 64, 130, 26);
+  g.fillRect(hx - 88, y + 90, 72, 16);
+
+  // Volumen y placas.
+  g.fillStyle = skin2;
+  g.fillRect(hx - 114, y - 78, 50, 18);
+  g.fillRect(hx - 136, y + 48, 70, 20);
+  g.fillRect(hx - 26, y - 72, 28, 126);
+  g.fillStyle = dark;
+  g.fillRect(hx - 6, y - 78, 12, 156);
+  g.fillRect(hx - 136, y - 38, 20, 8);
+  g.fillRect(hx - 128, y + 31, 18, 8);
+
+  // Hueco real de la boca: recortamos píxeles del boss en una capa independiente.
+  // Así se ven las estrellas/fondo ya dibujados en el canvas principal, no la piel de la cabeza.
+  g.save();
+  g.globalCompositeOperation = "destination-out";
+  g.fillStyle = "#000";
+  const mouthCutH = Math.max(16, open * 2 - 8);
+  // Cuerpo principal del hueco.
+  g.fillRect(hx - 166, y - open + 4, 104, mouthCutH);
+  // Escalones pixel-art para que el hueco no parezca un rectángulo perfecto.
+  g.fillRect(hx - 176, y - open + 12, 22, Math.max(8, mouthCutH - 16));
+  g.fillRect(hx - 86,  y - open + 10, 26, Math.max(8, mouthCutH - 20));
+  g.fillRect(hx - 154, y - 10, 94, 20);
+  g.restore();
+  g.globalCompositeOperation = "source-over";
+
+  // Boca transparente: no se pinta un rectángulo negro dentro.
+  // Al abrirse, se ve el fondo de estrellas a través del hueco.
+  // Solo dibujamos labios, dientes y la garganta profunda.
+  g.fillStyle = "rgba(0,0,0,.28)";
+  g.fillRect(hx - 160, y - open - 1, 92, 4);
+  g.fillRect(hx - 160, y + open - 3, 92, 4);
+
+  // Parches de piel solo en los labios.
+  // IMPORTANTE: se elimina el antiguo parche central hx-176/y-3,
+  // que era el cuadradito marrón flotante en la entrada de la boca.
+  g.fillStyle = skin;
+  g.fillRect(hx - 174, y - open - 5, 20, 7);
+  g.fillRect(hx - 174, y + open - 2, 22, 7);
+
+  // Garganta y lengua al fondo: pequeñas, profundas y separadas de la entrada.
+  const throatX = hx - 74;
+  g.fillStyle = "rgba(18,5,6,.82)";
+  g.fillRect(throatX - 12, y - 18, 30, 36);
+  g.fillStyle = "rgba(6,2,3,.88)";
+  g.fillRect(throatX + 8, y - 12, 14, 24);
+
+  g.fillStyle = worm.hurtT > 0 ? "#ffffff" : "#7f1d1d";
+  g.fillRect(throatX - 7, y - 8, 16, 5);
+  g.fillRect(throatX - 10, y - 2, 23, 8);
+  g.fillRect(throatX - 5, y + 8, 14, 5);
+
+  // Mandíbulas: menos abiertas, con escalones y dientes irregulares.
+  g.fillStyle = hurt ? "#c98a63" : "#9a6240";
+  g.fillRect(hx - 168, y - open - 14, 112, 14);
+  g.fillRect(hx - 152, y - open - 25, 74, 12);
+  g.fillRect(hx - 168, y + open, 112, 14);
+  g.fillRect(hx - 152, y + open + 13, 74, 12);
+
+  // Labio oscuro, pero sin línea tipo caja en la entrada.
+  g.fillStyle = "rgba(0,0,0,.32)";
+  g.fillRect(hx - 158, y - open - 1, 92, 4);
+  g.fillRect(hx - 158, y + open - 3, 92, 4);
+
+  // Dientes más cortos para que la boca no parezca tan enorme.
+  g.fillStyle = "#e8dcc8";
+  for (let i = 0; i < 6; i++){
+    const tx = hx - 156 + i * 18;
+    const toothH = 12 + (i % 2) * 6;
+    g.fillRect(tx, y - open - 1, 8, toothH);
+    g.fillRect(tx + 3, y + open - toothH + 1, 8, toothH);
+  }
+
+  // Ojo y ceja. Cuando el gusano muere, el ojo se cierra.
+  g.fillStyle = "#5b2d20";
+  g.fillRect(hx - 54, y - 65, 34, 12);
+
+  if (wormDeathActive || wormHp <= 0){
+    g.fillStyle = "#2a120c";
+    g.fillRect(hx - 49, y - 49, 25, 5);
+    g.fillStyle = "rgba(0,0,0,.35)";
+    g.fillRect(hx - 47, y - 47, 21, 3);
+  } else {
+    g.fillStyle = "#f6d365";
+    g.fillRect(hx - 48, y - 56, 22, 20);
+    g.fillStyle = "#111";
+    g.fillRect(hx - 40, y - 51, 7, 11);
+    g.fillStyle = "#fff2a8";
+    g.fillRect(hx - 45, y - 54, 4, 4);
+  }
+
+  // Arrugas/branquias laterales.
+  g.fillStyle = "rgba(0,0,0,.30)";
+  for (let i=0;i<4;i++){
+    g.fillRect(hx - 18 + i*10, y + 24 + i*7, 6, 31);
+  }
+
+  // Aviso visual del ataque: garganta encendida en windup + flecha arriba/abajo.
+  if (worm.attackState === "windup"){
+    const blink = 0.55 + 0.25 * Math.sin(worm.t * 18);
+    g.globalAlpha = blink;
+    g.fillStyle = "#f97316";
+    g.fillRect(throatX - 10, y - 9, 28, 6);
+    g.fillRect(throatX - 14, y - 2, 36, 7);
+    g.fillRect(throatX - 8, y + 6, 24, 6);
+    g.globalAlpha = 1;
+
+  }
+
+  g.restore();
+
+  // Componemos el boss encima del fondo ya dibujado.
+  // El hueco recortado queda transparente y deja ver estrellas/suelo detrás.
+  ctx.drawImage(bossLayer, 0, 0);
+}
+
+function drawVictoryScreen(){
+  if (!victoryMode) return;
+
+  victoryT += 1/60;
+  const pulse = 0.5 + 0.5 * Math.sin(victoryT * 5.5);
+  const cx = (W/2)|0;
+  const cy = (H/2)|0;
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  // Cortina suave para que se lea el final sin cortar del todo el fondo.
+  ctx.fillStyle = "rgba(0,0,0,.34)";
+  ctx.fillRect(0, 0, W, H);
+
+  // Fuegos artificiales pixel alrededor del texto.
+  for (let i=0; i<34; i++){
+    const a = i * 0.74 + victoryT * (0.8 + (i%4)*0.12);
+    const rr = 96 + (i%7)*16 + Math.sin(victoryT*2 + i)*10;
+    const x = cx + Math.cos(a) * rr;
+    const y = cy - 18 + Math.sin(a*1.17) * (rr*0.42);
+    const sz = 2 + (i % 3);
+    ctx.fillStyle = i % 2 ? "rgba(255,210,120,.85)" : "rgba(125,211,252,.80)";
+    ctx.fillRect(x|0, y|0, sz, sz);
+  }
+
+  // Halcón haciendo una pasada de victoria.
+  ctx.save();
+  const flyX = ((victoryT * 120) % (W + 170)) - 100;
+  const flyY = 76 + Math.sin(victoryT * 2.2) * 12;
+  ctx.globalAlpha = 0.86;
+  ctx.translate(flyX, flyY);
+  ctx.rotate(Math.sin(victoryT * 3) * 0.04);
+  ctx.drawImage(falconImg, -30, -18, 80, 60);
+  ctx.restore();
+
+  drawPixelText(ctx, "CONGRATULATIONS", cx + 3, cy - 30 + 3, 5, "rgba(0,0,0,.62)", "center");
+  drawPixelText(ctx, "CONGRATULATIONS", cx, cy - 30, 5, pulse > 0.5 ? "#FFE08A" : "#E9EEF7", "center");
+
+  drawPixelText(ctx, "HAS ESCAPADO DEL IMPERIO", cx + 2, cy + 28 + 2, 2, "rgba(0,0,0,.62)", "center");
+  drawPixelText(ctx, "HAS ESCAPADO DEL IMPERIO", cx, cy + 28, 2, "#BFE8FF", "center");
+
+  drawPixelText(ctx, "NUEVA MISION MUY PRONTO....", cx + 2, cy + 56 + 2, 2, "rgba(0,0,0,.62)", "center");
+  drawPixelText(ctx, "NUEVA MISION MUY PRONTO....", cx, cy + 56, 2, "#FFE08A", "center");
+
+
+  ctx.restore();
+}
+
+function drawGodModeHud(){
+  if (!GOD_SHIELDS) return;
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  const x = W - 18;
+  const y = 20;
+
+  // pequeña placa oscura detrás para que se lea en cualquier fondo
+  ctx.fillStyle = "rgba(0,0,0,.42)";
+  ctx.fillRect(W - 168, 12, 150, 28);
+
+  drawPixelText(ctx, "GOD MODE", x + 2, y + 2, 2, "rgba(0,0,0,.55)", "right");
+  drawPixelText(ctx, "GOD MODE", x, y, 2, "#FFD166", "right");
+
+  ctx.restore();
+}
+
+function drawBossHud(){
+  if (!phase4 || !worm.active || wormDeathActive || victoryMode) return;
+
+  const segments = WORM_MAX_HP;
+  const segW = 13;
+  const segH = 15;
+  const gap = 3;
+  const barW = segments * segW + (segments - 1) * gap;
+  const x = ((W - barW) / 2) | 0;
+  const y = 24;
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+
+  // Placa pixelada.
+  ctx.fillStyle = "rgba(0,0,0,.58)";
+  ctx.fillRect(x - 8, y - 7, barW + 16, segH + 14);
+  ctx.fillStyle = "rgba(255,255,255,.10)";
+  ctx.fillRect(x - 6, y - 5, barW + 12, 2);
+  ctx.fillRect(x - 6, y + segH + 3, barW + 12, 2);
+
+  for (let i=0; i<segments; i++){
+    const sx = x + i * (segW + gap);
+    const filled = i < wormHp;
+
+    // Marco individual tipo cartucho pixel.
+    ctx.fillStyle = "#160808";
+    ctx.fillRect(sx - 1, y - 1, segW + 2, segH + 2);
+
+    ctx.fillStyle = "#321111";
+    ctx.fillRect(sx, y, segW, segH);
+
+    if (filled){
+      const hpRatio = wormHp / WORM_MAX_HP;
+      const main = worm.hurtT > 0 ? "#fca5a5" : (hpRatio < 0.34 ? "#fb923c" : "#ef4444");
+      ctx.fillStyle = main;
+      ctx.fillRect(sx + 2, y + 2, segW - 4, segH - 4);
+
+      // brillo pixel arriba
+      ctx.fillStyle = "rgba(255,235,235,.50)";
+      ctx.fillRect(sx + 3, y + 3, segW - 6, 2);
+    } else {
+      // segmento vacío con detalle oscuro
+      ctx.fillStyle = "rgba(255,255,255,.07)";
+      ctx.fillRect(sx + 2, y + 2, segW - 4, 2);
+    }
+  }
+
+  ctx.restore();
+}
+
 
 function maybeEnterPhase3(){
   // no durante warm-up
   if (inWarmup) return;
 
   // no repetir
-  if (phase3 || enteringPhase3) return;
+  if (phase3 || enteringPhase3 || exitingPhase3 || phase4Warning || phase4 || bossDefeated) return;
 
   // solo por distancia
   if (worldX < PHASE3_UNLOCK_DIST) return;
@@ -2356,6 +3561,11 @@ function maybeEnterPhase3(){
 	if (shieldT > 0) shieldT = Math.max(0, shieldT - dt);
     if (!running) return;
 
+    if (victoryMode){
+      // Final completado: se mantiene el fondo/FX, pero se detiene la lógica de peligro.
+      return;
+    }
+
     // Dificultad suave basada SOLO en distancia
 	const BASE_SPEED = 280;
 	const MAX_ADD    = 360;
@@ -2371,12 +3581,18 @@ function maybeEnterPhase3(){
 	const tieRate = (prog > 0.6) ? 0.92 : 1.0;
 
 
-    worldX += worldSpeed * dt;
+    // Continuidad fase 3→4:
+    // Mientras el asteroide se está abriendo, el fondo sigue avanzando.
+    // Solo congelamos suelo/estrellas cuando la salida ya está completamente abierta
+    // y durante toda la lucha contra el boss.
+    const bossArenaFrozen = (phase4 || victoryMode || (phase4Warning && !exitingPhase3));
+    const worldAdvance = bossArenaFrozen ? 0 : worldSpeed * dt;
+    worldX += worldAdvance;
 		// puede activar fase 3 según distancia
 		
 	
 	// --- Power-ups de escudo (solo durante fase TIE) ---
-	const inTiePhase = (!inWarmup &&
+	const inTiePhase = (!phase4 && !exitingPhase3 && !phase4Warning && !inWarmup &&
 						worldX >= TIE_UNLOCK_DIST &&
 						worldX < PHASE3_UNLOCK_DIST); // si no quieres limitar, quita esta condición
 
@@ -2400,12 +3616,12 @@ function maybeEnterPhase3(){
 	}
 	
 	// Score por distancia en fase 3 (aunque no haya enemigos)
-	if (phase3 || enteringPhase3){
+	if (phase3 || enteringPhase3 || exitingPhase3 || phase4Warning || phase4){
 	  // puntos por pixel recorrido
 	  const ptsPerPx = PHASE3_SCORE_PER_1000PX / 1000;
 
 	  // acumulamos con el avance real del mundo este frame
-	  phase3ScoreCarry += worldSpeed * dt * ptsPerPx;
+	  phase3ScoreCarry += worldAdvance * ptsPerPx;
 
 	  // suma solo la parte entera (mantiene score “limpio”)
 	  const add = phase3ScoreCarry | 0;
@@ -2421,6 +3637,23 @@ function maybeEnterPhase3(){
 	updateTunnelTransition(dt);
 	
 	updateTunnelHold(dt);
+	updateTunnelExit(dt);
+	updatePhase4Warning(dt);
+
+	// Fase 4: al final del túnel primero se abre la salida, luego avisa y después aparece el gusano.
+	maybeEnterPhase4();
+
+    // Si el boss ya está muriendo, la nave queda flotando fija:
+    // sin gravedad, sin choque, sin respuesta táctil.
+    if (wormDeathActive || shipFrozenDuringBossDeath){
+      ship.vy = 0;
+      ship.x = shipFreezeX;
+      ship.y = shipFreezeY + Math.sin(wormDeathT * 2.2) * 2.0;
+      ship.rot += (0 - ship.rot) * (1 - Math.exp(-8 * dt));
+      bossLasers.length = 0;
+      if (phase4) updateWormBoss(dt);
+      return;
+    }
 
     bigAstCooldown = Math.max(0, bigAstCooldown - dt);
 
@@ -2445,7 +3678,7 @@ function maybeEnterPhase3(){
 
 
     // techo/suelo
-	if (enteringPhase3 || phase3){
+	if (enteringPhase3 || phase3 || exitingPhase3){
 	  // colisión contra túnel (techo dinámico + suelo dinámico)
 	  if (ship.y - ship.r < ceilingYEff(ship.x)){
 		crash(); return;
@@ -2463,10 +3696,28 @@ function maybeEnterPhase3(){
 	  }
 	}
 
+	// Actualización del jefe y de los láseres del Falcon.
+	// Importante: esto debe ejecutarse cada frame; si no, los disparos parecen quedarse parados
+	// y el gusano permanece fuera de pantalla.
+	if (phase4){
+	  // Blindaje: en fase 4 no puede quedar ni reaparecer ningún enemigo normal.
+	  spawnAsteroids = false;
+	  spawnTies = false;
+	  asteroids.length = 0;
+	  ties.length = 0;
+	  lasers.length = 0;
+	  pickups.length = 0;
+	  tAst = 0;
+	  tTie = 0;
+
+	  updateWormBoss(dt);
+	  updateFalconLasers(dt);
+	}
+
 
 
     // Spawns (asteroides)
-	if (spawnAsteroids && !inWarmup){
+	if (!phase4 && !exitingPhase3 && !phase4Warning && spawnAsteroids && !inWarmup){
 	  tAst += dt;
 	  if (tAst >= nextAst){
 		tAst = 0;
@@ -2529,7 +3780,7 @@ function maybeEnterPhase3(){
 	const phase2Prog = Math.max(0, Math.min(1, (worldX - TIE_UNLOCK_DIST) / PHASE2_RAMP_PX));
 
 	// Solo aparecen TIE cuando has avanzado suficiente
-	if (!inWarmup && worldX >= TIE_UNLOCK_DIST){
+	if (!phase4 && !exitingPhase3 && !phase4Warning && !inWarmup && worldX >= TIE_UNLOCK_DIST){
 	  if (spawnTies){
 		tTie += dt;
 		if (tTie >= nextTie){
@@ -2859,10 +4110,26 @@ function maybeEnterPhase3(){
       ctx.strokeRect(tieHit.x, tieHit.y, tieHit.w, tieHit.h);
     }
 
-    // Láseres: AABB
+    // Láseres enemigos: AABB
     for (const l of lasers){
       const laserBox = { x: l.x, y: l.y - (l.h/2), w: l.w, h: l.h };
       ctx.strokeRect(laserBox.x, laserBox.y, laserBox.w, laserBox.h);
+    }
+
+    // Láseres Falcon fase 4
+    ctx.strokeStyle = "rgba(0,255,0,0.95)";
+    for (const l of bossLasers){
+      ctx.strokeRect(l.x, l.y - (l.h/2), l.w, l.h);
+    }
+
+    // Gusano fase 4
+    if (phase4 && worm.active){
+      ctx.strokeStyle = "rgba(255,80,80,0.95)";
+      const hb = wormHeadHitbox();
+      ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
+      ctx.beginPath();
+      ctx.arc(worm.x - 70*WORM_SCALE, worm.y, 76*WORM_SCALE, 0, Math.PI*2);
+      ctx.stroke();
     }
 
     ctx.restore();
@@ -2885,7 +4152,7 @@ function maybeEnterPhase3(){
 	  ctx.stroke();
 
 	  // Techo del túnel
-	  if (enteringPhase3 || phase3){
+	  if (enteringPhase3 || phase3 || exitingPhase3){
 		ctx.strokeStyle = "rgba(0,255,255,0.85)";
 		ctx.beginPath();
 		for (let x = 0; x <= W; x++){
@@ -3091,7 +4358,7 @@ function draw(){
 	drawStarsLayer(starsFar,  0.08, 0.60);  // más lenta y algo más visible
 	drawBgPlanet(); // Planeta fijo (no se mueve con worldX)
 	drawStarsLayer(starsNear, 0.10, 0.85);
-	if (enteringPhase3 || phase3){
+	if (enteringPhase3 || phase3 || exitingPhase3){
 	  drawCeilingSurface();
 	}
 	drawPlanetSurface();
@@ -3120,6 +4387,11 @@ function draw(){
 		  (t.w * S) | 0,
 		  (t.h * S) | 0
 		);
+    }
+
+    if (phase4){
+      drawWormBoss();
+      drawFalconLasers();
     }
 
    for (const l of lasers){
@@ -3159,8 +4431,9 @@ function draw(){
 	  }
 	}
 
-    // Halcón
-	if (running){
+    // Halcón: durante CONGRATULATIONS se oculta la nave del juego,
+    // queda solo la nave de la animación final.
+	if (running && !victoryMode){
 	  drawFalcon();
 	  drawShieldPickupFX(ctx); // 👈 AQUÍ
 	}
@@ -3251,6 +4524,10 @@ function draw(){
 	}
 
 
+
+    drawBossHud();
+    drawGodModeHud();
+    drawVictoryScreen();
 	
 	drawParticles();
 	drawDebrisAndWrecks();
