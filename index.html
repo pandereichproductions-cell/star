@@ -690,17 +690,27 @@ let victoryT = 0;
 let shipFrozenDuringBossDeath = false;
 let shipFreezeX = 0;
 let shipFreezeY = 0;
-const WORM_MAX_HP = 17; // mitad de vida para que el jefe muera antes
-const WORM_SCALE = 1.3; // Gusano 30% más grande.
+const WORM_MAX_HP = 12; // vida del jefe: menos HP, pero solo vulnerable durante el preataque
+const WORM_SCALE = 1.17; // Gusano 10% más pequeño que la versión anterior.
 // Entrada cinematográfica del gusano: empieza menos lejos y entra más rápido desde la derecha.
 const WORM_SPAWN_X = BASE_W + 420;
 const WORM_TARGET_X = BASE_W - 160;
 const WORM_ENTER_SPEED = 180;
-// Fase 4: el ataque del gusano solo puede venir desde arriba o desde abajo.
-// Así el jugador puede leer el patrón y esquivarlo, no depende tanto del azar.
-const WORM_ATTACK_TOP_Y = 82;
-const WORM_ATTACK_BOTTOM_Y = BASE_H - 82;
+// Fase 4: el ataque del gusano sale desde una franja superior o inferior,
+// pero ya no se pega tanto al techo/suelo. Las franjas quedan más cerca del centro
+// para que el hueco de escape se parezca más al interior difícil del asteroide.
+const WORM_ATTACK_TOP_MIN_Y = 138;
+const WORM_ATTACK_TOP_MAX_Y = 168;
+const WORM_ATTACK_BOTTOM_MIN_Y = BASE_H - 168;
+const WORM_ATTACK_BOTTOM_MAX_Y = BASE_H - 138;
 const WORM_ATTACK_MAX_NECK = BASE_W * 0.86;
+function randomWormAttackY(side){
+  if (side === "top") return rand(WORM_ATTACK_TOP_MIN_Y, WORM_ATTACK_TOP_MAX_Y);
+  return rand(WORM_ATTACK_BOTTOM_MIN_Y, WORM_ATTACK_BOTTOM_MAX_Y);
+}
+// Ventana de ataque: la lengua se enciende durante el preataque y solo ahí recibe daño.
+const WORM_WINDUP_DURATION = 2.0; // preataque más corto: menos margen para colocarse y más dificultad
+const WORM_VULNERABLE_START = 0.0; // la lengua aparece al empezar el preataque y ya es vulnerable
 let wormHp = WORM_MAX_HP;
 const worm = {
   active: false,
@@ -718,7 +728,7 @@ const worm = {
   attackState: "idle",
   attackStateT: 0,
   attackSide: "bottom",
-  attackY: WORM_ATTACK_BOTTOM_Y,
+  attackY: randomWormAttackY("bottom"),
   targetY: BASE_H * 0.52
 };
 
@@ -2821,7 +2831,7 @@ function enterPhase4(debug=false){
   worm.attackState = "idle";
   worm.attackStateT = 0;
   worm.attackSide = Math.random() < 0.5 ? "top" : "bottom";
-  worm.attackY = worm.attackSide === "top" ? WORM_ATTACK_TOP_Y : WORM_ATTACK_BOTTOM_Y;
+  worm.attackY = randomWormAttackY(worm.attackSide);
   worm.targetY = H * 0.52;
 
   // No recolocamos la nave al entrar desde la fase 3: mantiene continuidad visual.
@@ -2917,7 +2927,28 @@ function pointInRect(px, py, r){
   return px > r.x && px < r.x + r.w && py > r.y && py < r.y + r.h;
 }
 
+function wormIsVulnerable(){
+  // Solo recibe daño justo antes de atacar: lengua/garganta encendida en windup.
+  return (
+    phase4 &&
+    worm.active &&
+    !wormDeathActive &&
+    worm.attackState === "windup" &&
+    worm.attackStateT >= WORM_VULNERABLE_START &&
+    worm.attackStateT < WORM_WINDUP_DURATION
+  );
+}
+
+function wormTongueGrow(){
+  // La lengua no aparece completa: nace desde la garganta y crece durante el preataque.
+  if (!wormIsVulnerable() && worm.hurtT <= 0) return 0;
+  if (worm.hurtT > 0) return 1;
+  const raw = clamp((worm.attackStateT - WORM_VULNERABLE_START) / 0.85, 0, 1);
+  return raw * raw * (3 - 2 * raw); // smoothstep
+}
+
 function hitWormWeakMouth(l){
+  if (!wormIsVulnerable()) return false;
   const tip = laserTip(l);
   return pointInRect(tip.x, tip.y, wormMouthWeakBox());
 }
@@ -3009,7 +3040,7 @@ function updateWormBoss(dt){
     bossIntroT = 0;
   }
 
-  // Patrón más justo: el gusano prepara el ataque pegado arriba o abajo, nunca desde el centro.
+  // Patrón por franjas: prepara el ataque en una banda superior o inferior, dejando hueco central.
   const idleY = H * 0.52 + Math.sin(worm.t * 1.05) * 34 + Math.sin(worm.t * 0.43) * 14;
   if (worm.attackState === "idle" || bossIntroT > 0){
     worm.targetY = idleY;
@@ -3019,14 +3050,14 @@ function updateWormBoss(dt){
   const yFollow = 1 - Math.exp(-dt * (worm.attackState === "windup" ? 4.5 : 6.5));
   worm.y = lerp(worm.y, worm.targetY, yFollow);
 
-  // Ataque periódico de cuello desde techo o suelo.
+  // Ataque periódico de cuello desde una franja superior o inferior.
   if (bossIntroT <= 0 && worm.x <= targetX + 2){
     worm.attackTimer -= dt;
     worm.attackStateT += dt;
 
     if (worm.attackState === "idle" && worm.attackTimer <= 0){
       worm.attackSide = Math.random() < 0.5 ? "top" : "bottom";
-      worm.attackY = worm.attackSide === "top" ? WORM_ATTACK_TOP_Y : WORM_ATTACK_BOTTOM_Y;
+      worm.attackY = randomWormAttackY(worm.attackSide);
       worm.attackState = "windup";
       worm.attackStateT = 0;
       worm.neckTarget = 0;
@@ -3034,7 +3065,7 @@ function updateWormBoss(dt){
 
     if (worm.attackState === "windup"){
       worm.neckTarget = 0;
-      if (worm.attackStateT >= 0.92){
+      if (worm.attackStateT >= WORM_WINDUP_DURATION){
         // Ataque largo: cruza casi toda la pantalla, pero al venir de arriba/abajo se puede esquivar.
         worm.neckTarget = clamp((worm.x - ship.x) + 80, W * 0.62, WORM_ATTACK_MAX_NECK);
         worm.attackState = "lunge";
@@ -3066,13 +3097,14 @@ function updateWormBoss(dt){
   worm.neckExt += clamp(dNeck, -neckSpeed * dt, neckSpeed * dt);
   if (Math.abs(worm.neckExt) < 0.5 && worm.neckTarget === 0) worm.neckExt = 0;
 
-  // Mandíbula: más abierta en windup/lunge, y cierre brusco al mantener el ataque.
+  // Mandíbula: abre menos para que el gusano no parezca exagerado.
+  // En preataque se abre lo justo para enseñar la lengua vulnerable.
   let baseBite = 0.5 + 0.5 * Math.sin(worm.t * 3.0);
-  if (worm.attackState === "windup") baseBite = 1;
-  if (worm.attackState === "lunge") baseBite = 0.9;
-  if (worm.attackState === "hold") baseBite = 0.25;
+  if (worm.attackState === "windup") baseBite = 0.86;
+  if (worm.attackState === "lunge") baseBite = 0.78;
+  if (worm.attackState === "hold") baseBite = 0.22;
   const snap = Math.pow(baseBite, 2.1);
-  worm.mouthOpen = 20 + 38 * snap;
+  worm.mouthOpen = 16 + 28 * snap;
 
   // Colisión contra cabeza/cuerpo/mandíbulas. Durante la intro damos un respiro.
   if (bossIntroT > 0) return;
@@ -3084,7 +3116,7 @@ function updateWormBoss(dt){
 
   // Mandíbulas delante de la cabeza. No cubren el hueco central: se puede disparar dentro.
   const s = WORM_SCALE;
-  const inMouthX = sx + sr > hx - 174*s && sx - sr < hx - 42*s;
+  const inMouthX = sx + sr > hx - 174*s && sx - sr < hx - 72*s;
   const hitsUpperJaw = inMouthX && sy - sr < mouthY - open * 0.40 * s && sy + sr > mouthY - (open + 22) * s;
   const hitsLowerJaw = inMouthX && sy + sr > mouthY + open * 0.40 * s && sy - sr < mouthY + (open + 22) * s;
 
@@ -3213,13 +3245,20 @@ function drawWormBoss(){
   const open = worm.mouthOpen | 0;
   const hurt = worm.hurtT > 0;
 
+  // Ojo cerrado durante todo el estiramiento del cuello.
+  // Se vuelve a abrir al comenzar el encogimiento/retract.
+  const eyeClosedNow = !wormDeathActive && wormHp > 0 && (
+    worm.attackState === "lunge" ||
+    worm.attackState === "hold"
+  );
+
   g.save();
   g.imageSmoothingEnabled = false;
   if (wormDeathActive){
     g.globalAlpha = Math.max(0, 1 - wormDeathT / 2.75);
   }
 
-  // Escala global del boss: 1.3 = 30% más grande.
+  // Escala global del boss: 10% más pequeño que la versión anterior.
   g.translate(hx, y);
   g.scale(WORM_SCALE, WORM_SCALE);
   g.translate(-hx, -y);
@@ -3255,9 +3294,9 @@ function drawWormBoss(){
     const sx = neckStart - k * neckLen;
     const sy = y + Math.sin(worm.t * 2.4 + i * 0.85) * 9;
 
-    // Cuello mucho más ancho: casi del tamaño de la cabeza, para que no parezca una tubería fina.
-    const h = 136 - Math.min(12, i * 1.4);
-    const ww = 104 - Math.min(12, i * 1.2);
+    // Cuello al diámetro completo de la cabeza: segmentos más anchos y casi sin estrechamiento.
+    const h = 178 - Math.min(4, i * 0.45);
+    const ww = 174 - Math.min(4, i * 0.45);
 
     g.fillStyle = hurt ? "#b77a58" : (i % 2 ? "#74452e" : "#875239");
     g.fillRect((sx - ww/2)|0, (sy - h/2)|0, ww|0, h|0);
@@ -3329,10 +3368,7 @@ function drawWormBoss(){
   g.fillStyle = "rgba(6,2,3,.88)";
   g.fillRect(throatX + 8, y - 12, 14, 24);
 
-  g.fillStyle = worm.hurtT > 0 ? "#ffffff" : "#7f1d1d";
-  g.fillRect(throatX - 7, y - 8, 16, 5);
-  g.fillRect(throatX - 10, y - 2, 23, 8);
-  g.fillRect(throatX - 5, y + 8, 14, 5);
+  // La lengua no se dibuja aquí: se pinta más abajo con crecimiento progresivo.
 
   // Mandíbulas: menos abiertas, con escalones y dientes irregulares.
   g.fillStyle = hurt ? "#c98a63" : "#9a6240";
@@ -3355,22 +3391,23 @@ function drawWormBoss(){
     g.fillRect(tx + 3, y + open - toothH + 1, 8, toothH);
   }
 
-  // Ojo y ceja. Cuando el gusano muere, el ojo se cierra.
-  g.fillStyle = "#5b2d20";
-  g.fillRect(hx - 54, y - 65, 34, 12);
-
-  if (wormDeathActive || wormHp <= 0){
-    g.fillStyle = "#2a120c";
-    g.fillRect(hx - 49, y - 49, 25, 5);
+  // Ojo. Ceja eliminada.
+  if (wormDeathActive || wormHp <= 0 || eyeClosedNow){
+    // Ojo cerrado: misma posición horizontal del ojo abierto, pero como línea visible.
+    // Antes era demasiado fino y se perdía sobre la piel oscura de la cabeza.
     g.fillStyle = "rgba(0,0,0,.35)";
-    g.fillRect(hx - 47, y - 47, 21, 3);
+    g.fillRect(hx - 39, y - 51, 15, 5);
+    g.fillStyle = "#120807";
+    g.fillRect(hx - 38, y - 50, 13, 3);
+    g.fillStyle = "rgba(255,220,140,.45)";
+    g.fillRect(hx - 37, y - 51, 11, 1);
   } else {
     g.fillStyle = "#f6d365";
-    g.fillRect(hx - 48, y - 56, 22, 20);
+    g.fillRect(hx - 37, y - 54, 11, 10);
     g.fillStyle = "#111";
-    g.fillRect(hx - 40, y - 51, 7, 11);
+    g.fillRect(hx - 33, y - 52, 4, 6);
     g.fillStyle = "#fff2a8";
-    g.fillRect(hx - 45, y - 54, 4, 4);
+    g.fillRect(hx - 36, y - 53, 2, 2);
   }
 
   // Arrugas/branquias laterales.
@@ -3379,16 +3416,41 @@ function drawWormBoss(){
     g.fillRect(hx - 18 + i*10, y + 24 + i*7, 6, 31);
   }
 
-  // Aviso visual del ataque: garganta encendida en windup + flecha arriba/abajo.
-  if (worm.attackState === "windup"){
-    const blink = 0.55 + 0.25 * Math.sin(worm.t * 18);
-    g.globalAlpha = blink;
-    g.fillStyle = "#f97316";
-    g.fillRect(throatX - 10, y - 9, 28, 6);
-    g.fillRect(throatX - 14, y - 2, 36, 7);
-    g.fillRect(throatX - 8, y + 6, 24, 6);
-    g.globalAlpha = 1;
+  // Aviso visual del ataque: la lengua nace desde dentro y crece hacia la entrada de la boca.
+  // Versión corta: obliga a colocarse delante sin que parezca una lanza.
+  // Fuera del preataque no hay lengua visible.
+  const tongueGrow = wormTongueGrow();
+  if (tongueGrow > 0){
+    const blink = 0.70 + 0.24 * Math.sin(worm.t * 18);
+    const len = 8 + 24 * tongueGrow;
+    const tip = 3 + 6 * tongueGrow;
+    const baseX = throatX + 10;
+    const leftX = baseX - len;
 
+    g.globalAlpha = worm.hurtT > 0 ? 1 : blink;
+    g.fillStyle = worm.hurtT > 0 ? "#ffffff" : "#fb923c";
+
+    // Núcleo: sale de la garganta hacia fuera, no aparece entero de golpe.
+    g.fillRect(leftX, y - 5, len, 10);
+    g.fillRect(leftX + 8, y - 10, Math.max(4, len - 14), 5);
+    g.fillRect(leftX + 8, y + 5, Math.max(4, len - 14), 5);
+
+    // Punta luminosa cuando ya ha crecido algo.
+    if (tongueGrow > 0.28){
+      g.fillRect(leftX - tip, y - 4, tip + 2, 8);
+      g.fillRect(leftX - Math.max(2, tip - 3), y - 8, Math.max(3, tip - 2), 4);
+      g.fillRect(leftX - Math.max(2, tip - 3), y + 4, Math.max(3, tip - 2), 4);
+    }
+
+    // Brillo también crece, pero más tarde y más suave.
+    if (tongueGrow > 0.18){
+      g.globalAlpha = (0.18 + 0.16 * Math.sin(worm.t * 22)) * tongueGrow;
+      g.fillStyle = "#fed7aa";
+      g.fillRect(leftX - 6, y - 13, len + 14, 4);
+      g.fillRect(leftX - 10, y - 2, len + 20, 5);
+      g.fillRect(leftX - 6, y + 10, len + 14, 4);
+    }
+    g.globalAlpha = 1;
   }
 
   g.restore();
@@ -3486,6 +3548,11 @@ function drawBossHud(){
   ctx.fillStyle = "rgba(255,255,255,.10)";
   ctx.fillRect(x - 6, y - 5, barW + 12, 2);
   ctx.fillRect(x - 6, y + segH + 3, barW + 12, 2);
+
+  if (wormIsVulnerable()){
+    drawPixelText(ctx, "", W/2 + 1, y + segH + 23, 2, "rgba(0,0,0,.55)", "center");
+    drawPixelText(ctx, "", W/2,     y + segH + 22, 2, "#fed7aa", "center");
+  }
 
   for (let i=0; i<segments; i++){
     const sx = x + i * (segW + gap);
