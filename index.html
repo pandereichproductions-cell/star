@@ -427,18 +427,155 @@ let shieldUpBuf = null;
 //let musicEnabled = true;
 let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
 
+// iPhone/iPad: los FX rápidos van sintetizados para evitar tirones por MP3/HTMLAudio.
+const FORCE_SYNTH =
+  new URLSearchParams(location.search).has("synth");
+
+const IS_IOS =
+  FORCE_SYNTH ||
+  /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let synthNoiseBuf = null;
+
+function sfxOut(){
+  return sfxGain || (laserCtx ? laserCtx.destination : null);
+}
+
+function makeSynthNoiseBuffer(duration=0.36){
+  if (!laserCtx) return null;
+  const len = Math.max(1, Math.floor(laserCtx.sampleRate * duration));
+  const buffer = laserCtx.createBuffer(1, len, laserCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i=0; i<len; i++){
+    const t = i / len;
+    // Ruido “crunchy” 8-bit: escalonado y con caída rápida.
+    const stepped = Math.round((Math.random() * 2 - 1) * 7) / 7;
+    data[i] = stepped * (1 - t) * (Math.random() > 0.28 ? 1 : 0);
+  }
+  return buffer;
+}
+
+function playLaserSynth(){
+  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+  const dest = sfxOut();
+  if (!dest) return;
+
+  const now = laserCtx.currentTime;
+  const osc = laserCtx.createOscillator();
+  const gain = laserCtx.createGain();
+
+  osc.type = "square";
+  osc.frequency.setValueAtTime(760, now);
+  osc.frequency.exponentialRampToValueAtTime(420, now + 0.12);
+
+  gain.gain.setValueAtTime(0.16, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+
+  osc.connect(gain);
+  gain.connect(dest);
+  osc.start(now);
+  osc.stop(now + 0.15);
+}
+
+function playExplosionSynth(delay=0, volume=0.45){
+  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+
+  const fire = () => {
+    try{
+      const dest = sfxOut();
+      if (!dest) return;
+
+      const now = laserCtx.currentTime;
+      const dur = 0.34;
+      if (!synthNoiseBuf) synthNoiseBuf = makeSynthNoiseBuffer(dur);
+
+      const src = laserCtx.createBufferSource();
+      const filter = laserCtx.createBiquadFilter();
+      const gain = laserCtx.createGain();
+
+      src.buffer = synthNoiseBuf || makeSynthNoiseBuffer(dur);
+
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(1600, now);
+      filter.frequency.exponentialRampToValueAtTime(180, now + dur);
+
+      gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+      src.connect(filter);
+      filter.connect(gain);
+      gain.connect(dest);
+      src.start(now);
+      src.stop(now + dur);
+    }catch(e){}
+  };
+
+  if (delay > 0) setTimeout(fire, delay * 1000);
+  else fire();
+}
+
+function playShieldHitSynth(){
+  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+  const dest = sfxOut();
+  if (!dest) return;
+
+  const now = laserCtx.currentTime;
+  const osc = laserCtx.createOscillator();
+  const gain = laserCtx.createGain();
+
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(180, now);
+  osc.frequency.exponentialRampToValueAtTime(55, now + 0.22);
+
+  gain.gain.setValueAtTime(0.24, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+
+  osc.connect(gain);
+  gain.connect(dest);
+  osc.start(now);
+  osc.stop(now + 0.25);
+}
+
+function playShieldUpSynth(){
+  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+  const dest = sfxOut();
+  if (!dest) return;
+
+  const now = laserCtx.currentTime;
+
+  function beep(start, f0, f1, dur, vol){
+    const osc = laserCtx.createOscillator();
+    const gain = laserCtx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(f0, start);
+    osc.frequency.exponentialRampToValueAtTime(f1, start + dur);
+
+    gain.gain.setValueAtTime(0.001, start);
+    gain.gain.linearRampToValueAtTime(vol, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+
+    osc.connect(gain);
+    gain.connect(dest);
+
+    osc.start(start);
+    osc.stop(start + dur);
+  }
+
+  beep(now + 0.00, 320, 500, 0.10, 0.18);
+  beep(now + 0.12, 420, 700, 0.10, 0.22);
+  beep(now + 0.24, 520, 1200, 0.28, 0.32);
+}
+
 async function initLaserWebAudio(){
   if (laserCtx) return true;
-
-  // En file:// fetch de audio da CORS en Chrome/iOS; salimos sin audio
-  if (location.protocol === "file:") return false;
 
   try{
 	laserCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
 
 	// Ganancia general para FX (laser + crash)
 	sfxGain = laserCtx.createGain();
-	sfxGain.gain.value = 0.75;
+	sfxGain.gain.value = 1.8;
 	sfxGain.connect(laserCtx.destination);
 	
 	// 🔥 Warm-up audio (iOS): arranca el motor para evitar lag/latencia del primer sonido
@@ -456,36 +593,37 @@ async function initLaserWebAudio(){
 	laserGain.gain.value = 0.45;
 	laserGain.connect(sfxGain);
 
-	const load = async (url) => {
-	  try{
-		const res = await fetch(url, { cache: "no-store" });
-		if (!res.ok) throw new Error("HTTP " + res.status);
-		const arr = await res.arrayBuffer();
-		return await laserCtx.decodeAudioData(arr);
-	  } catch(e){
-		return null;
-	  }
-	};
+	// En iPhone/iPad NO cargamos ni decodificamos MP3 de FX: se sintetizan por código.
+	// En file:// tampoco intentamos fetch porque suele fallar por CORS.
+	const canLoadMp3Fx = !IS_IOS && location.protocol !== "file:";
 
-const bufs = await Promise.all([
-  load("audio/laser.mp3"),
-  load("audio/explosion.mp3"),
-  load("audio/hitShield.mp3"),
-  load("audio/8-bit-charge.mp3"),   // <-- NUEVO
-]);
+	if (canLoadMp3Fx){
+	  const load = async (url) => {
+		try{
+		  const res = await fetch(url, { cache: "no-store" });
+		  if (!res.ok) throw new Error("HTTP " + res.status);
+		  const arr = await res.arrayBuffer();
+		  return await laserCtx.decodeAudioData(arr);
+		} catch(e){
+		  return null;
+		}
+	  };
 
-laserBuf = bufs[0];
-explosionBuf = bufs[1];
-hitShieldBuf = bufs[2];
-shieldUpBuf = bufs[3];              // <-- NUEVO
+	  const bufs = await Promise.all([
+		load("audio/8-bit-laser.mp3"),
+		load("audio/8-bit-explosion.mp3"),
+		load("audio/8-bit-hitShield.mp3"),
+		load("audio/8-bit-charge.mp3"),
+	  ]);
 
-
-	if (!laserBuf && !explosionBuf && !hitShieldBuf && !shieldUpBuf) {
-	  try { await laserCtx.close(); } catch(e){}
-	  laserCtx = null;
-	  return false;
+	  laserBuf = bufs[0];
+	  explosionBuf = bufs[1];
+	  hitShieldBuf = bufs[2];
+	  shieldUpBuf = bufs[3];
 	}
 
+	// Precrea el ruido de explosión sintética para que no haya pico de CPU en el primer crash.
+	if (!synthNoiseBuf) synthNoiseBuf = makeSynthNoiseBuffer(0.34);
 
 	return true;
   } catch(e){
@@ -496,6 +634,8 @@ shieldUpBuf = bufs[3];              // <-- NUEVO
   laserBuf = null;
   explosionBuf  = null;
   hitShieldBuf = null;
+  shieldUpBuf = null;
+  synthNoiseBuf = null;
 
   laserGain = null;
   hitShieldGain = null;
@@ -529,22 +669,28 @@ music.volume = 0.20;
 
 // ===== AUDIO HELPERS =====
 function playShieldHit(){
-  // WebAudio primero
-  if (audioEnabled && audioUnlocked && laserCtx && hitShieldBuf){
+  if (!audioEnabled || !audioUnlocked) return;
+
+  if (IS_IOS){
+    playShieldHitSynth();
+    return;
+  }
+
+  // WebAudio primero en desktop
+  if (laserCtx && hitShieldBuf){
 	try{
 	  const src = laserCtx.createBufferSource();
 	  src.buffer = hitShieldBuf;
-	  src.connect(hitShieldGain || sfxGain);
+	  src.connect(hitShieldGain || sfxGain || laserCtx.destination);
 	  src.start(0);
 	  return;
 	} catch(e){}
   }
 
-  // fallback HTMLAudio
-  if (!audioEnabled || !audioUnlocked) return;
+  // fallback SOLO desktop. En iOS evitamos HTMLAudio para que no meta lag.
   try {
 	sfxShieldHit.currentTime = 0;
-	sfxShieldHit.play();
+	sfxShieldHit.play().catch(()=>{});
   } catch(e){}
 }
 
@@ -696,7 +842,7 @@ let shipFrozenDuringBossDeath = false;
 let shipFreezeX = 0;
 let shipFreezeY = 0;
 const WORM_MAX_HP = 12; // vida del jefe: menos HP, pero solo vulnerable durante el preataque
-const WORM_SCALE = 1.287; // Gusano 10% más pequeño que la versión anterior.
+const WORM_SCALE = 1.4; // Gusano 10% más pequeño que la versión anterior.
 // Entrada cinematográfica del gusano: empieza menos lejos y entra más rápido desde la derecha.
 const WORM_SPAWN_X = BASE_W + 420;
 const WORM_TARGET_X = BASE_W - 160;
@@ -947,15 +1093,20 @@ function playLaser(){
   if (now - lastLaserSfx < 120) return;
   lastLaserSfx = now;
 
+  if (IS_IOS){
+    playLaserSynth();
+    return;
+  }
+
   if (laserCtx && laserBuf){
     const src = laserCtx.createBufferSource();
     src.buffer = laserBuf;
-    src.connect(laserGain);
+    src.connect(laserGain || sfxGain || laserCtx.destination);
     src.start(0);
     return;
   }
 
-  // fallback
+  // fallback SOLO desktop
   const a = laserPool[laserIdx];
   laserIdx = (laserIdx + 1) % laserPool.length;
   a.currentTime = 0;
@@ -965,21 +1116,31 @@ function playLaser(){
 function playCrash(){
   if (!audioUnlocked || !audioEnabled) return;
 
+  if (IS_IOS){
+    playExplosionSynth();
+    return;
+  }
+
   if (laserCtx && explosionBuf){
     const src = laserCtx.createBufferSource();
     src.buffer = explosionBuf;
-    src.connect(sfxGain);
+    src.connect(sfxGain || laserCtx.destination);
     src.start(0);
     return;
   }
 
-  // fallback por si aún no cargó (desktop / file://)
+  // fallback SOLO desktop
   sfxCrash.currentTime = 0;
   sfxCrash.play().catch(()=>{});
 }
 
 function playCrashOneShot(delay=0){
   if (!audioEnabled || !audioUnlocked) return;
+
+  if (IS_IOS){
+    playExplosionSynth(delay, 0.42);
+    return;
+  }
 
   const fire = () => {
     try{
@@ -1254,15 +1415,20 @@ function playWormDeathSfx(){
 function playShieldUp(){
   if (!audioUnlocked || !audioEnabled) return;
 
+  if (IS_IOS){
+    playShieldUpSynth();
+    return;
+  }
+
   if (laserCtx && shieldUpBuf){
     const src = laserCtx.createBufferSource();
     src.buffer = shieldUpBuf;
-    src.connect(sfxGain);
+    src.connect(sfxGain || laserCtx.destination);
     src.start(0);
     return;
   }
 
-  // fallback por si aún no cargó o no hay WebAudio
+  // fallback SOLO desktop
   sfxShieldUp.currentTime = 0;
   sfxShieldUp.play().catch(()=>{});
 }
@@ -1617,6 +1783,16 @@ function initStars(){
 		return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
 	  };
 	}
+
+function updateBestScore(){
+  const s = Math.floor(score) * 10;
+  if (s > best){
+    best = s;
+    localStorage.setItem("falcon_run_best", String(best));
+    bestEl.textContent = String(best);
+  }
+}
+
 function reset(){
   
 	resetLowCanvasesHard();  // 🔥 FIX iOS
@@ -2577,11 +2753,7 @@ function unlockAudio(){
 
     const isFile = (location.protocol === "file:");
 
-    // ✅ En iPhone evita precargar pools HTMLAudio (puede dar tirón)
-    // Si quieres mantenerlo en desktop, limítalo a NO iOS.
-    const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-                   (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-
+    // ✅ En iPhone evita precargar pools HTMLAudio (puede dar tirón).
     if (!isFile && !IS_IOS){
       // Precalentar FX HTMLAudio (desktop)
       try { laserPool.forEach(a => a.load()); } catch(e){}
@@ -2601,7 +2773,7 @@ function unlockAudio(){
           const b = laserCtx.createBuffer(1, 128, laserCtx.sampleRate);
           const src = laserCtx.createBufferSource();
           src.buffer = b;
-          src.connect(sfxGain);
+          src.connect(sfxGain || laserCtx.destination);
           src.start(0);
         }catch(e){}
       }
@@ -2633,12 +2805,7 @@ function unlockAudio(){
 	phaseMsg = "";
 	shieldT = 0;
 	shieldMsg = "";
-    const s = Math.floor(score) *10;
-    if (s > best){
-      best = s;
-      localStorage.setItem("falcon_run_best", String(best));
-      bestEl.textContent = String(best);
-    }
+    updateBestScore();
 	canRestart = false;
 	restartTimer = 1.2;   // segundos que debe verse la explosión
 
@@ -3230,6 +3397,8 @@ function defeatWorm(){
   wormDeathBurstT = 0;
   bossLasers.length = 0;
   score += 20;
+  scoreEl.textContent = String(Math.floor(score) * 10);
+  updateBestScore();
   playWormDeathSfx();
   spawnWormDeathBurst(true);
   impactShake();
@@ -4516,32 +4685,30 @@ function draw(){
 
    for (const l of lasers){
 
-	  // 🎲 radio variable del glow (flicker sutil)
 	  const r = 3 + Math.random()*2;
 
-	  // === GLOW redondeado ===
 	  ctx.save();
 	  ctx.globalAlpha = 0.35;
-	  ctx.fillStyle = getCSS("--laser");
+	  ctx.fillStyle = "rgba(0,255,80,0.35)";
 
 	  ctx.beginPath();
 	  ctx.roundRect(
-		(l.x|0) - 4,
-		((l.y - 1)|0) - 4,
-		(l.w + 8)|0,
+		(l.x|0)-4,
+		((l.y-1)|0)-4,
+		(l.w+8)|0,
 		10,
-		r        // 👈 aquí usas el radio variable
+		r
 	  );
 	  ctx.fill();
 	  ctx.restore();
 
-	  // === Cuerpo fino ===
-	  ctx.fillStyle = getCSS("--laser");
+	  // cuerpo verde
+	  ctx.fillStyle = "rgb(0,255,80)";
 	  ctx.fillRect(l.x|0, (l.y - 1)|0, l.w|0, 2);
 
-	  // === Núcleo blanco ===
+	  // núcleo blanco
 	  ctx.fillStyle = "rgba(255,255,255,.55)";
-	  ctx.fillRect((l.x + 2)|0, (l.y)|0, (l.w - 6)|0, 1);
+	  ctx.fillRect((l.x + 2)|0, l.y|0, (l.w - 6)|0, 1);
 	}
 	
 	// power-ups (solo cuando el juego está corriendo)
