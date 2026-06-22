@@ -20,7 +20,7 @@
       --fg:#e9eef7;
       --muted:#9aa7bd;
       --accent:#7dd3fc;
-      --laser:rgb(70,255,0);
+      --laser:rgb(255,60,60);
     }
     *{box-sizing:border-box}
    html, body{
@@ -674,6 +674,11 @@ let exitingPhase3 = false;
 let phase4Warning = false;
 let phase4WarningT = 0;
 
+// Frenado suave del fondo al pasar a fase 4.
+// Empieza cuando el asteroide ya se ha abierto por completo.
+let bossBgBrake = 0; // 0 = scroll normal, 1 = fondo parado
+const BOSS_BG_BRAKE_DURATION = 1.8;
+
 
 let spawnAsteroids = true;
 let spawnTies = true;
@@ -691,7 +696,7 @@ let shipFrozenDuringBossDeath = false;
 let shipFreezeX = 0;
 let shipFreezeY = 0;
 const WORM_MAX_HP = 12; // vida del jefe: menos HP, pero solo vulnerable durante el preataque
-const WORM_SCALE = 1.17; // Gusano 10% más pequeño que la versión anterior.
+const WORM_SCALE = 1.287; // Gusano 10% más pequeño que la versión anterior.
 // Entrada cinematográfica del gusano: empieza menos lejos y entra más rápido desde la derecha.
 const WORM_SPAWN_X = BASE_W + 420;
 const WORM_TARGET_X = BASE_W - 160;
@@ -699,10 +704,10 @@ const WORM_ENTER_SPEED = 180;
 // Fase 4: el ataque del gusano sale desde una franja superior o inferior,
 // pero ya no se pega tanto al techo/suelo. Las franjas quedan más cerca del centro
 // para que el hueco de escape se parezca más al interior difícil del asteroide.
-const WORM_ATTACK_TOP_MIN_Y = 138;
-const WORM_ATTACK_TOP_MAX_Y = 168;
-const WORM_ATTACK_BOTTOM_MIN_Y = BASE_H - 168;
-const WORM_ATTACK_BOTTOM_MAX_Y = BASE_H - 138;
+const WORM_ATTACK_TOP_MIN_Y = 120;
+const WORM_ATTACK_TOP_MAX_Y = 150;
+const WORM_ATTACK_BOTTOM_MIN_Y = BASE_H - 160;
+const WORM_ATTACK_BOTTOM_MAX_Y = BASE_H - 130;
 const WORM_ATTACK_MAX_NECK = BASE_W * 0.86;
 function randomWormAttackY(side){
   if (side === "top") return rand(WORM_ATTACK_TOP_MIN_Y, WORM_ATTACK_TOP_MAX_Y);
@@ -1646,6 +1651,7 @@ function reset(){
     asteroids.length = 0;
     ties.length = 0;
     lasers.length = 0;
+    bossLasers.length = 0; // limpia láseres del Falcon al reiniciar
 	
 	pickups.length = 0;
 	tPickup = 0;
@@ -1682,6 +1688,7 @@ function reset(){
 	  exitingPhase3 = false;
 	  phase4Warning = false;
 	  phase4WarningT = 0;
+	  bossBgBrake = 0;
 	  exitTunnelT = 0;
 	  spawnAsteroids = true;
 	  spawnTies = true;
@@ -2778,9 +2785,15 @@ function updatePhase4Warning(dt){
   tAst = 0;
   tTie = 0;
 
+  // El fondo empieza a frenar solo cuando la salida del asteroide ya está abierta.
+  if (!exitingPhase3){
+    bossBgBrake = Math.min(1, bossBgBrake + dt / BOSS_BG_BRAKE_DURATION);
+  }
+
   phase4WarningT -= dt;
   if (phase4WarningT <= 0 && !exitingPhase3){
     phase4Warning = false;
+    bossBgBrake = 1;
     enterPhase4(false);
   }
 }
@@ -2792,6 +2805,7 @@ function enterPhase4(debug=false){
   enteringPhase3 = false;
   exitingPhase3 = false;
   phase4Warning = false;
+  bossBgBrake = 1;
   phase4 = true;
   bossDefeated = false;
   wormDeathActive = false;
@@ -2891,6 +2905,19 @@ function damageShipByBoss(){
 
 function wormHeadX(){
   return worm.x - worm.neckExt;
+}
+
+function wormHeadHitbox(){
+  // Hitbox debug de la cabeza del gusano, coherente con la caja sólida usada en hitWormSolid().
+  // Antes drawHitboxes() la llamaba, pero esta función no existía y al pulsar H fallaba.
+  const hx = wormHeadX();
+  const s = WORM_SCALE;
+  return {
+    x: hx - 158 * s,
+    y: worm.y - 104 * s,
+    w: 188 * s,
+    h: 210 * s
+  };
 }
 
 function wormMouthWeakBox(){
@@ -3649,11 +3676,14 @@ function maybeEnterPhase3(){
 
 
     // Continuidad fase 3→4:
-    // Mientras el asteroide se está abriendo, el fondo sigue avanzando.
-    // Solo congelamos suelo/estrellas cuando la salida ya está completamente abierta
-    // y durante toda la lucha contra el boss.
-    const bossArenaFrozen = (phase4 || victoryMode || (phase4Warning && !exitingPhase3));
-    const worldAdvance = bossArenaFrozen ? 0 : worldSpeed * dt;
+    // Mientras el asteroide se está abriendo, el fondo sigue avanzando normal.
+    // Cuando ya está abierto, frenamos progresivamente hasta quedar parado en la arena del boss.
+    const bossArenaActive = (phase4 || victoryMode || (phase4Warning && !exitingPhase3));
+    if (!bossArenaActive && !phase4Warning){
+      bossBgBrake = 0;
+    }
+    const brake = bossArenaActive ? bossBgBrake : 0;
+    const worldAdvance = worldSpeed * (1 - brake) * dt;
     worldX += worldAdvance;
 		// puede activar fase 3 según distancia
 		
@@ -4184,19 +4214,40 @@ function maybeEnterPhase3(){
     }
 
     // Láseres Falcon fase 4
-    ctx.strokeStyle = "rgba(0,255,0,0.95)";
+    ctx.strokeStyle = "rgba(255,60,60,0.95)";
     for (const l of bossLasers){
       ctx.strokeRect(l.x, l.y - (l.h/2), l.w, l.h);
     }
 
     // Gusano fase 4
     if (phase4 && worm.active){
+      const hx = wormHeadX();
+      const s = WORM_SCALE;
+
+      // Cabeza: misma caja base que usa la colisión sólida de la cabeza.
       ctx.strokeStyle = "rgba(255,80,80,0.95)";
-      const hb = wormHeadHitbox();
+      const hb = (typeof wormHeadHitbox === "function")
+        ? wormHeadHitbox()
+        : { x: hx - 158*s, y: worm.y - 104*s, w: 188*s, h: 210*s };
       ctx.strokeRect(hb.x, hb.y, hb.w, hb.h);
-      ctx.beginPath();
-      ctx.arc(worm.x - 70*WORM_SCALE, worm.y, 76*WORM_SCALE, 0, Math.PI*2);
-      ctx.stroke();
+
+      // Cuello completo: caja alargada entre cabeza y cuerpo.
+      // Ajustada al grosor visual actual del cuello.
+      ctx.strokeStyle = "rgba(255,160,40,0.95)";
+      const neckBox = {
+        x: hx - 30*s,
+        y: worm.y - 88*s,
+        w: (worm.x + 42*s) - (hx - 30*s),
+        h: 176*s
+      };
+      ctx.strokeRect(neckBox.x, neckBox.y, neckBox.w, neckBox.h);
+
+      // Boca vulnerable: solo se resalta cuando realmente puede recibir daño.
+      if (typeof wormIsVulnerable === "function" && wormIsVulnerable()){
+        ctx.strokeStyle = "rgba(255,60,60,0.95)";
+        const wb = wormMouthWeakBox();
+        ctx.strokeRect(wb.x, wb.y, wb.w, wb.h);
+      }
     }
 
     ctx.restore();
@@ -4459,6 +4510,8 @@ function draw(){
     if (phase4){
       drawWormBoss();
       drawFalconLasers();
+    } else if (bossLasers.length){
+      bossLasers.length = 0;
     }
 
    for (const l of lasers){
