@@ -392,8 +392,8 @@ function centerPixelText(text, scale, yOffset, color){
 }
 
 // ===== HUD DENTRO DEL CANVAS =====
-const UI_MUSIC_BTN = { x: BASE_W - 200, y: 10, w: 90, h: 24 };
-const UI_FX_BTN    = { x: BASE_W - 100, y: 10, w: 70, h: 24 };
+const UI_MUSIC_BTN = { x: BASE_W - 180, y: 10, w: 90, h: 24 };
+const UI_FX_BTN    = { x: BASE_W - 80, y: 10, w: 70, h: 24 };
 
 function canvasPointFromEvent(e){
   const rect = canvas.getBoundingClientRect();
@@ -476,8 +476,8 @@ function drawGameHud(){
 
   // SCORE y BEST juntos arriba a la izquierda
   ctx.globalAlpha = 0.86;
-  drawPixelText(ctx, "SCORE " + currentScore, 16, 14, 1.5, "#E9EEF7", "left");
-  drawPixelText(ctx, "BEST  " + currentBest, 16, 34, 1.5, "#E9EEF7", "left");
+  drawPixelText(ctx, "SCORE " + currentScore, 16, 14, 2, "#E9EEF7", "left");
+  drawPixelText(ctx, "BEST  " + currentBest, 16, 34, 2, "#E9EEF7", "left");
 
   // MUSIC/FX arriba a la derecha, donde antes estaba BEST
   drawCanvasButton(musicEnabled ? "MUSIC ON" : "MUSIC OFF", UI_MUSIC_BTN, musicEnabled);
@@ -757,9 +757,9 @@ const sfxShieldUp = new Audio("audio/8-bit-charge.mp3");
 sfxShieldUp.volume = 0.70;
 
 
-const music = new Audio("audio/8-bit-music2.mp3");
+const music = new Audio("audio/8-bit-music3.mp3"); //"audio/8-bit-music2.mp3"
 music.loop = true;
-music.volume = 0.20;
+music.volume = 0.50;
 
 // ===== AUDIO HELPERS =====
 function playShieldHit(){
