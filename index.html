@@ -109,18 +109,11 @@
 </head>
 <body>
   <div class="wrap" id="app">
-  <div class="hud" id="hud">
-	  <div class="pill">
-		<span class="dot"></span>
-		<span>Impulso con <b>Espacio</b> o <b>Click</b></span>
-	  </div>
-
-	  <div class="hud-right">
-		<span>Puntos: <b id="score">0</b> · Récord: <b id="best">0</b></span>
-		<button id="musicToggle" aria-label="Música">🔊</button>
-	  </div>
-	</div>
-
+    <!-- HUD HTML eliminado: SCORE/BEST y controles AUDIO/FX se dibujan dentro del canvas -->
+    <div id="hud" style="display:none">
+      <b id="score">0</b>
+      <b id="best">0</b>
+    </div>
 
     <canvas id="c" width="960" height="440"></canvas>
 	
@@ -398,6 +391,101 @@ function centerPixelText(text, scale, yOffset, color){
   );
 }
 
+// ===== HUD DENTRO DEL CANVAS =====
+const UI_MUSIC_BTN = { x: BASE_W - 200, y: 10, w: 90, h: 24 };
+const UI_FX_BTN    = { x: BASE_W - 100, y: 10, w: 70, h: 24 };
+
+function canvasPointFromEvent(e){
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width / rect.width;
+  const sy = canvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * sx,
+    y: (e.clientY - rect.top) * sy
+  };
+}
+
+function pointInCanvasRect(p, r){
+  if (!p || !r) return false;
+  return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h;
+}
+
+function handleCanvasAudioToggle(e){
+  const p = canvasPointFromEvent(e);
+
+  if (pointInCanvasRect(p, UI_MUSIC_BTN)){
+    e.preventDefault();
+    e.stopPropagation();
+
+    unlockAudio().then(() => {
+      musicEnabled = !musicEnabled;
+      saveAudioPrefs();
+
+      if (!musicEnabled){
+        musicStarted = false;
+        stopMusic();
+      } else if (!gameOver && running){
+        musicStarted = true;
+        startMusic();
+      }
+    });
+
+    return true;
+  }
+
+  if (pointInCanvasRect(p, UI_FX_BTN)){
+    e.preventDefault();
+    e.stopPropagation();
+
+    unlockAudio().then(() => {
+      fxEnabled = !fxEnabled;
+      saveAudioPrefs();
+      if (fxEnabled) playShieldUpSynth();
+    });
+
+    return true;
+  }
+
+  return false;
+}
+
+function drawCanvasButton(label, rect, enabled){
+  ctx.save();
+
+  ctx.globalAlpha = enabled ? 0.82 : 0.42;
+  ctx.fillStyle = enabled ? "rgba(125,211,252,0.16)" : "rgba(255,255,255,0.07)";
+  ctx.strokeStyle = enabled ? "rgba(125,211,252,0.55)" : "rgba(255,255,255,0.18)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 7);
+  ctx.fill();
+  ctx.stroke();
+
+  drawPixelText(ctx, label, rect.x + rect.w/2, rect.y + 7, 1.5, "#E9EEF7", "center");
+
+  ctx.restore();
+}
+
+function drawGameHud(){
+  if (victoryMode) return;
+
+  const currentScore = String(Math.floor(score) * 10).padStart(4, "0");
+  const currentBest  = String(best).padStart(4, "0");
+
+  ctx.save();
+
+  // SCORE y BEST juntos arriba a la izquierda
+  ctx.globalAlpha = 0.86;
+  drawPixelText(ctx, "SCORE " + currentScore, 16, 14, 1.5, "#E9EEF7", "left");
+  drawPixelText(ctx, "BEST  " + currentBest, 16, 34, 1.5, "#E9EEF7", "left");
+
+  // MUSIC/FX arriba a la derecha, donde antes estaba BEST
+  drawCanvasButton(musicEnabled ? "MUSIC ON" : "MUSIC OFF", UI_MUSIC_BTN, musicEnabled);
+  drawCanvasButton(fxEnabled ? "FX ON" : "FX OFF", UI_FX_BTN, fxEnabled);
+
+  ctx.restore();
+}
+
 
 // --- NUEVAS VARIABLES DE ESCUDO ---
 let shields = 2;       // 2 = Lleno, 1 = Dañado, 0 = Sin escudo
@@ -424,8 +512,13 @@ let shieldUpBuf = null;
 
 
 
-//let musicEnabled = true;
-let audioEnabled = localStorage.getItem("audioEnabled") !== "false";
+// Preferencias separadas: música y efectos FX
+let musicEnabled = localStorage.getItem("musicEnabled") !== "false";
+let fxEnabled = localStorage.getItem("fxEnabled") !== "false";
+
+// Compatibilidad interna: algunas rutinas antiguas miraban audioEnabled.
+// Lo dejamos siempre true y controlamos por separado con musicEnabled / fxEnabled.
+let audioEnabled = true;
 
 // iPhone/iPad: los FX rápidos van sintetizados para evitar tirones por MP3/HTMLAudio.
 const FORCE_SYNTH =
@@ -456,7 +549,7 @@ function makeSynthNoiseBuffer(duration=0.36){
 }
 
 function playLaserSynth(){
-  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+  if (!fxEnabled || !audioUnlocked || !laserCtx) return;
   const dest = sfxOut();
   if (!dest) return;
 
@@ -478,7 +571,7 @@ function playLaserSynth(){
 }
 
 function playExplosionSynth(delay=0, volume=0.45){
-  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+  if (!fxEnabled || !audioUnlocked || !laserCtx) return;
 
   const fire = () => {
     try{
@@ -515,7 +608,7 @@ function playExplosionSynth(delay=0, volume=0.45){
 }
 
 function playShieldHitSynth(){
-  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+  if (!fxEnabled || !audioUnlocked || !laserCtx) return;
   const dest = sfxOut();
   if (!dest) return;
 
@@ -537,7 +630,7 @@ function playShieldHitSynth(){
 }
 
 function playShieldUpSynth(){
-  if (!audioEnabled || !audioUnlocked || !laserCtx) return;
+  if (!fxEnabled || !audioUnlocked || !laserCtx) return;
   const dest = sfxOut();
   if (!dest) return;
 
@@ -646,8 +739,9 @@ async function initLaserWebAudio(){
 
 }
 
-function saveAudioPref(){
-  localStorage.setItem("audioEnabled", audioEnabled);
+function saveAudioPrefs(){
+  localStorage.setItem("musicEnabled", String(musicEnabled));
+  localStorage.setItem("fxEnabled", String(fxEnabled));
 }
 
 const sfxCrash = new Audio("audio/8-bit-explosion.mp3");
@@ -669,7 +763,7 @@ music.volume = 0.20;
 
 // ===== AUDIO HELPERS =====
 function playShieldHit(){
-  if (!audioEnabled || !audioUnlocked) return;
+  if (!fxEnabled || !audioUnlocked) return;
 
   if (IS_IOS){
     playShieldHitSynth();
@@ -695,36 +789,9 @@ function playShieldHit(){
 }
 
 
-// ---- Botón música ----
-const musicBtn = document.getElementById("musicToggle");
-
-function updateMusicIcon(){
-  musicBtn.textContent = audioEnabled ? "🔊" : "🔇";
-}
-
-musicBtn.addEventListener("click", () => {
-  unlockAudio().then(() => {
-	audioEnabled = !audioEnabled;
-	saveAudioPref();
-	updateMusicIcon();
-
-	if (!audioEnabled){
-	  stopMusic();
-	} else if (!gameOver && running){
-	  musicStarted = true;
-	  startMusic();
-	}
-  });
-});
-
-
-updateMusicIcon();
-
-
-	
+// ---- Controles de audio ----
 function startMusic(){
-  //if (!musicEnabled) return;
-  if (!audioEnabled) return;
+  if (!musicEnabled) return;
   if (!audioUnlocked) return;
   if (!music.paused) return;
 
@@ -1087,7 +1154,7 @@ let laserIdx = 0;
 let lastLaserSfx = 0;
 
 function playLaser(){
-  if (!audioUnlocked || !audioEnabled) return;
+  if (!audioUnlocked || !fxEnabled) return;
 
   const now = performance.now();
   if (now - lastLaserSfx < 120) return;
@@ -1114,7 +1181,7 @@ function playLaser(){
 }
 
 function playCrash(){
-  if (!audioUnlocked || !audioEnabled) return;
+  if (!audioUnlocked || !fxEnabled) return;
 
   if (IS_IOS){
     playExplosionSynth();
@@ -1135,7 +1202,7 @@ function playCrash(){
 }
 
 function playCrashOneShot(delay=0){
-  if (!audioEnabled || !audioUnlocked) return;
+  if (!fxEnabled || !audioUnlocked) return;
 
   if (IS_IOS){
     playExplosionSynth(delay, 0.42);
@@ -1171,7 +1238,7 @@ let lastTongueHitSfx = 0;
 let lastBodyHitSfx = 0;
 
 function getCodeSfxCtx(){
-  if (!audioEnabled || !audioUnlocked) return null;
+  if (!fxEnabled || !audioUnlocked) return null;
   try{
     if (!codeSfxCtx){
       codeSfxCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1413,7 +1480,7 @@ function playWormDeathSfx(){
 }
 
 function playShieldUp(){
-  if (!audioUnlocked || !audioEnabled) return;
+  if (!audioUnlocked || !fxEnabled) return;
 
   if (IS_IOS){
     playShieldUpSynth();
@@ -1761,7 +1828,7 @@ function initStars(){
   let gameOver = false;
   let score = 0;
   let best = Number(localStorage.getItem("falcon_run_best") || 0);
-  bestEl.textContent = best;
+  if (bestEl) bestEl.textContent = best;
 
   const SPR = makeSprites();
 
@@ -1789,7 +1856,7 @@ function updateBestScore(){
   if (s > best){
     best = s;
     localStorage.setItem("falcon_run_best", String(best));
-    bestEl.textContent = String(best);
+    if (bestEl) bestEl.textContent = String(best);
   }
 }
 
@@ -1813,7 +1880,7 @@ function reset(){
     shipFreezeX = 0;
     shipFreezeY = 0;
     score = 0;
-    scoreEl.textContent = "0";
+    if (scoreEl) scoreEl.textContent = "0";
 	
 	phase3ScoreCarry = 0;
 
@@ -1947,7 +2014,7 @@ window.addEventListener("keydown", (e) => {
 	
 	if (wormDeathActive || shipFrozenDuringBossDeath) return;
 	unlockAudio().then(() => {
-    if (!musicStarted && !gameOver) {
+    if (!musicStarted && !gameOver && musicEnabled) {
       startMusic();
       musicStarted = true;
     }
@@ -1976,13 +2043,15 @@ window.addEventListener("keydown", (e) => {
   }
 }, { passive:false });
 
-canvas.addEventListener("pointerdown", () => {
+canvas.addEventListener("pointerdown", (e) => {
+  if (handleCanvasAudioToggle(e)) return;
+
   // Tras CONGRATULATIONS o durante la muerte del boss, los clicks/taps quedan bloqueados.
   // Evita reinicios accidentales y deja la nave flotando.
   if (victoryMode || wormDeathActive || shipFrozenDuringBossDeath) return;
 
   unlockAudio().then(() => {
-    if (!musicStarted && !gameOver) {
+    if (!musicStarted && !gameOver && musicEnabled) {
       startMusic();
       musicStarted = true;
     }
@@ -2746,7 +2815,7 @@ function unlockAudio(){
 
   audioUnlockPromise = music.play().then(async () => {
     // Pausar si no toca música
-    if (!musicStarted || !audioEnabled){
+    if (!musicStarted || !musicEnabled){
       music.pause();
       music.currentTime = 0;
     }
@@ -3397,7 +3466,7 @@ function defeatWorm(){
   wormDeathBurstT = 0;
   bossLasers.length = 0;
   score += 20;
-  scoreEl.textContent = String(Math.floor(score) * 10);
+  if (scoreEl) scoreEl.textContent = String(Math.floor(score) * 10);
   updateBestScore();
   playWormDeathSfx();
   spawnWormDeathBurst(true);
@@ -4112,7 +4181,7 @@ function maybeEnterPhase3(){
       if (!t.passed && t.x + t.w < ship.x - 10){
         t.passed = true;
         score += 1;
-        scoreEl.textContent = String(Math.floor(score)*10);
+        if (scoreEl) scoreEl.textContent = String(Math.floor(score)*10);
       }
 
       // disparos
@@ -4277,7 +4346,7 @@ function maybeEnterPhase3(){
     if (invulTimer > 0) invulTimer--;
 
     // actualizar score mostrado aunque sumemos fracciones por asteroides
-    scoreEl.textContent = String(Math.floor(score)*10);
+    if (scoreEl) scoreEl.textContent = String(Math.floor(score)*10);
 	
 	// Motor: flash instantáneo (solo 1 frame)
 	// Motor: flash 1-frame visible (update va antes que draw)
@@ -4783,35 +4852,6 @@ function draw(){
 	}
 
 
-   // score pixel pequeño (arriba a la izquierda, translúcido)
-	if (running && !gameOver){
-	  const label = "SCORE:";
-	  const value = String(Math.floor(score)*10);
-
-	  const scale = 2;      // tamaño pixel
-	  const x = 14;         // margen izquierdo
-	  const y = 12;         // margen superior
-
-	  // ancho aproximado del texto "SCORE:" en píxeles
-	  // (5 letras + ':' = 6 caracteres)
-	  const charW = 6 * scale;   // ancho por carácter (tu fuente pixel)
-	  const gap = 6;             // separación entre texto y número
-
-	  ctx.save();
-	  ctx.globalAlpha = 0.35;
-
-	  // "SCORE:"
-	  drawPixelText(ctx, label, x, y, scale, "#E9EEF7", "left");
-
-	  // número, desplazado a la derecha
-	  const xValue = x + label.length * charW + gap;
-	  drawPixelText(ctx, value, xValue, y, scale, "#E9EEF7", "left");
-
-	  ctx.restore();
-	}
-
-
-
     drawBossHud();
     drawGodModeHud();
     drawVictoryScreen();
@@ -4861,6 +4901,9 @@ function draw(){
 
 	// ✅ MUY IMPORTANTE: volver al estado previo al shake
 	ctx.restore();
+
+	// HUD fijo encima del juego, sin cabecera HTML y sin shake
+	drawGameHud();
 
 
   }
