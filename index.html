@@ -2922,10 +2922,17 @@ function unlockAudio(){
     }catch(e){}
 
     // 2) La música va después y puede fallar sin romper los FX.
+    // IMPORTANTE: si MUSIC está OFF, no llamamos nunca a music.play().
+    // En iPhone, aunque luego se pause, puede sonar un instante al lanzar el primer FX.
     try{
-      await music.play();
+      if (musicEnabled){
+        await music.play();
 
-      if (!musicStarted || !musicEnabled){
+        if (!musicStarted){
+          music.pause();
+          music.currentTime = 0;
+        }
+      } else {
         music.pause();
         music.currentTime = 0;
       }
