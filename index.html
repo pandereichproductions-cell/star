@@ -2891,37 +2891,26 @@ function drawParticles(){
 
 
 function unlockAudio(){
-  if (audioUnlocked) return Promise.resolve();
+  // En iPhone/Safari no dependas de music.play() para inicializar los FX.
+  // Si music.play() falla o queda bloqueado, los sintéticos necesitan igualmente su AudioContext.
+  if (audioUnlocked && laserCtx) return Promise.resolve(true);
   if (audioUnlockPromise) return audioUnlockPromise;
 
-  audioUnlocked = true;
-  try { getCodeSfxCtx(); } catch(e){}
+  audioUnlockPromise = (async () => {
+    audioUnlocked = true;
 
-  audioUnlockPromise = music.play().then(async () => {
-    // Pausar si no toca música
-    if (!musicStarted || !musicEnabled){
-      music.pause();
-      music.currentTime = 0;
-    }
+    try { getCodeSfxCtx(); } catch(e){}
 
-    const isFile = (location.protocol === "file:");
-
-    // ✅ En iPhone evita precargar pools HTMLAudio (puede dar tirón).
-    if (!isFile && !IS_IOS){
-      // Precalentar FX HTMLAudio (desktop)
-      try { laserPool.forEach(a => a.load()); } catch(e){}
-      try { sfxCrash.load(); } catch(e){}
-    }
-
-    // WebAudio FX
+    // 1) Inicializa primero WebAudio FX. Esto es lo importante para iPhone.
     try{
       const ok = await initLaserWebAudio();
+
       if (ok && laserCtx){
         if (laserCtx.state === "suspended"){
           await laserCtx.resume().catch(()=>{});
         }
 
-        // 🔥 Warm-up WebAudio (muy importante para iOS)
+        // Warm-up silencioso WebAudio.
         try{
           const b = laserCtx.createBuffer(1, 128, laserCtx.sampleRate);
           const src = laserCtx.createBufferSource();
@@ -2930,11 +2919,28 @@ function unlockAudio(){
           src.start(0);
         }catch(e){}
       }
-    }catch(e){
-      // sin audio pero el juego sigue
+    }catch(e){}
+
+    // 2) La música va después y puede fallar sin romper los FX.
+    try{
+      await music.play();
+
+      if (!musicStarted || !musicEnabled){
+        music.pause();
+        music.currentTime = 0;
+      }
+    }catch(e){}
+
+    const isFile = (location.protocol === "file:");
+
+    // 3) Precalentar HTMLAudio solo en desktop; en iPhone no lo usamos para FX.
+    if (!isFile && !IS_IOS){
+      try { laserPool.forEach(a => a.load()); } catch(e){}
+      try { sfxCrash.load(); } catch(e){}
     }
 
-  }).catch(() => {});
+    return !!laserCtx;
+  })();
 
   return audioUnlockPromise;
 }
