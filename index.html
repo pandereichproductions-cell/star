@@ -130,7 +130,10 @@ const BASE_W = 960;
 const BASE_H = 440;
 
 // ===== DEBUG / MODOS =====
-let GOD_SHIELDS = new URLSearchParams(location.search).has("god") || new URLSearchParams(location.search).has("invul"); // invulnerabilidad total: ?god=1, ?invul=1 o tecla 9
+const URL_PARAMS = new URLSearchParams(location.search);
+let GOD_SHIELDS = URL_PARAMS.has("god");
+let ELEMENT_INVUL = URL_PARAMS.has("invul");
+
 const WARMUP_SECONDS = 3.0;     // segundos de ensayo inicial
 const DEBUG_START_PHASE4 = new URLSearchParams(location.search).has("phase4"); // prueba directa: abre el HTML con ?phase4=1
 
@@ -570,6 +573,43 @@ function playLaserSynth(){
   osc.stop(now + 0.15);
 }
 
+// Láser TIE más largo y menos seco.
+// Lo uso separado del láser del Falcon para poder ajustar cada uno sin afectar al otro.
+function playTieLaserSynth(){
+  if (!fxEnabled || !audioUnlocked || !laserCtx) return;
+  const dest = sfxOut();
+  if (!dest) return;
+
+  const now = laserCtx.currentTime;
+
+  const osc1 = laserCtx.createOscillator();
+  const osc2 = laserCtx.createOscillator();
+  const gain = laserCtx.createGain();
+
+  osc1.type = "square";
+  osc2.type = "triangle";
+
+  // Más agudo: "pew" verde imperial, no "bwoom" grave.
+  osc1.frequency.setValueAtTime(1350, now);
+  osc1.frequency.exponentialRampToValueAtTime(760, now + 0.18);
+
+  osc2.frequency.setValueAtTime(920, now);
+  osc2.frequency.exponentialRampToValueAtTime(520, now + 0.18);
+
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.linearRampToValueAtTime(0.28, now + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.20);
+
+  osc1.connect(gain);
+  osc2.connect(gain);
+  gain.connect(dest);
+
+  osc1.start(now);
+  osc2.start(now);
+  osc1.stop(now + 0.21);
+  osc2.stop(now + 0.21);
+}
+
 function playExplosionSynth(delay=0, volume=0.45){
   if (!fxEnabled || !audioUnlocked || !laserCtx) return;
 
@@ -579,27 +619,49 @@ function playExplosionSynth(delay=0, volume=0.45){
       if (!dest) return;
 
       const now = laserCtx.currentTime;
-      const dur = 0.34;
-      if (!synthNoiseBuf) synthNoiseBuf = makeSynthNoiseBuffer(dur);
+
+      // Explosión sintética más larga y menos seca.
+      // Antes duraba 0.34s y caía muy rápido; ahora tiene más cola y un grave debajo.
+      const dur = 0.56;
 
       const src = laserCtx.createBufferSource();
       const filter = laserCtx.createBiquadFilter();
       const gain = laserCtx.createGain();
 
-      src.buffer = synthNoiseBuf || makeSynthNoiseBuffer(dur);
+      // Creamos ruido del tamaño correcto para esta explosión larga.
+      src.buffer = makeSynthNoiseBuffer(dur);
 
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(1600, now);
-      filter.frequency.exponentialRampToValueAtTime(180, now + dur);
+      filter.frequency.setValueAtTime(2200, now);
+      filter.frequency.exponentialRampToValueAtTime(120, now + dur);
 
       gain.gain.setValueAtTime(volume, now);
+      gain.gain.exponentialRampToValueAtTime(Math.max(0.08, volume * 0.28), now + 0.24);
       gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
 
       src.connect(filter);
       filter.connect(gain);
       gain.connect(dest);
+
+      // Capa grave tipo "rumble" para que el choque contra suelo/techo no sea tan seco.
+      const rumble = laserCtx.createOscillator();
+      const rumbleGain = laserCtx.createGain();
+
+      rumble.type = "triangle";
+      rumble.frequency.setValueAtTime(95, now);
+      rumble.frequency.exponentialRampToValueAtTime(34, now + dur);
+
+      rumbleGain.gain.setValueAtTime(volume * 0.38, now);
+      rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+      rumble.connect(rumbleGain);
+      rumbleGain.connect(dest);
+
       src.start(now);
       src.stop(now + dur);
+
+      rumble.start(now);
+      rumble.stop(now + dur);
     }catch(e){}
   };
 
@@ -617,16 +679,18 @@ function playShieldHitSynth(){
   const gain = laserCtx.createGain();
 
   osc.type = "triangle";
-  osc.frequency.setValueAtTime(180, now);
-  osc.frequency.exponentialRampToValueAtTime(55, now + 0.22);
 
-  gain.gain.setValueAtTime(0.24, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+  osc.frequency.setValueAtTime(140, now);
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.28);
+
+  gain.gain.setValueAtTime(0.50, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
 
   osc.connect(gain);
   gain.connect(dest);
+
   osc.start(now);
-  osc.stop(now + 0.25);
+  osc.stop(now + 0.30);
 }
 
 function playShieldUpSynth(){
@@ -645,19 +709,19 @@ function playShieldUpSynth(){
     osc.frequency.exponentialRampToValueAtTime(f1, start + dur);
 
     gain.gain.setValueAtTime(0.001, start);
-    gain.gain.linearRampToValueAtTime(vol, start + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, start + dur);
+    gain.gain.linearRampToValueAtTime(vol, start + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + dur + 0.05);
 
     osc.connect(gain);
     gain.connect(dest);
 
     osc.start(start);
-    osc.stop(start + dur);
+    osc.stop(start + dur + 0.06);
   }
 
-  beep(now + 0.00, 320, 500, 0.10, 0.18);
-  beep(now + 0.12, 420, 700, 0.10, 0.22);
-  beep(now + 0.24, 520, 1200, 0.28, 0.32);
+	beep(now + 0.00, 320, 550, 0.14, 0.35);
+	beep(now + 0.16, 450, 800, 0.14, 0.42);
+	beep(now + 0.32, 600, 1600, 0.45, 0.60);
 }
 
 async function initLaserWebAudio(){
@@ -754,7 +818,7 @@ const sfxShieldHit = new Audio("audio/8-bit-hitShield.mp3");
 sfxShieldHit.volume = 0.8;
 
 const sfxShieldUp = new Audio("audio/8-bit-charge.mp3");
-sfxShieldUp.volume = 0.70;
+sfxShieldUp.volume = 0.60;
 
 
 const music = new Audio("audio/8-bit-music3.mp3"); //"audio/8-bit-music2.mp3"
@@ -1178,6 +1242,26 @@ function playLaser(){
   laserIdx = (laserIdx + 1) % laserPool.length;
   a.currentTime = 0;
   a.play().catch(()=>{});
+}
+
+let lastTieLaserSfx = 0;
+
+function playTieLaser(){
+  if (!audioUnlocked || !fxEnabled) return;
+
+  const now = performance.now();
+  if (now - lastTieLaserSfx < 90) return;
+  lastTieLaserSfx = now;
+
+  // El TIE usa siempre sonido sintético si WebAudio está disponible:
+  // así queda más largo y no depende del MP3 corto.
+  if (laserCtx){
+    playTieLaserSynth();
+    return;
+  }
+
+  // Si WebAudio no está inicializado, usa el láser normal como respaldo.
+  playLaser();
 }
 
 function playCrash(){
@@ -1959,12 +2043,12 @@ function reset(){
 
 
   
-  if (audioEnabled){
+	musicStarted = false;
+	stopMusic();
+
+	if (musicEnabled){
 	  musicStarted = true;
 	  startMusic();
-	} else {
-	  musicStarted = false;
-	  stopMusic();
 	}
 }
 
@@ -3119,8 +3203,11 @@ function fireFalconLaser(){
 
 function damageShipByBoss(){
   if (wormDeathActive || shipFrozenDuringBossDeath || victoryMode) return false;
-  if (GOD_SHIELDS) {
+
+  // GOD = invulnerable a todo. INVUL = solo elementos/enemigos, no suelo/techo.
+  if (GOD_SHIELDS || ELEMENT_INVUL) {
     invulTimer = Math.max(invulTimer, 20);
+    spawnMiniFX(ship.x, ship.y);
     return false;
   }
   if (invulTimer > 0) return false;
@@ -3775,7 +3862,7 @@ function drawVictoryScreen(){
 }
 
 function drawGodModeHud(){
-  if (!GOD_SHIELDS) return;
+  if (!GOD_SHIELDS && !ELEMENT_INVUL) return;
 
   ctx.save();
   ctx.imageSmoothingEnabled = false;
@@ -3787,8 +3874,9 @@ function drawGodModeHud(){
   ctx.fillStyle = "rgba(0,0,0,.42)";
   ctx.fillRect(W - 168, 12, 150, 28);
 
-  drawPixelText(ctx, "GOD MODE", x + 2, y + 2, 2, "rgba(0,0,0,.55)", "right");
-  drawPixelText(ctx, "GOD MODE", x, y, 2, "#FFD166", "right");
+  const modeLabel = GOD_SHIELDS ? "GOD MODE" : "INVUL";
+  drawPixelText(ctx, modeLabel, x + 2, y + 2, 2, "rgba(0,0,0,.55)", "right");
+  drawPixelText(ctx, modeLabel, x, y, 2, "#FFD166", "right");
 
   ctx.restore();
 }
@@ -4204,7 +4292,7 @@ function maybeEnterPhase3(){
 		  life: 2.0
 		});
 		
-		playLaser();
+		playTieLaser();
 
       }
 
@@ -4223,9 +4311,17 @@ function maybeEnterPhase3(){
       const laserBox = { x: l.x, y: l.y - (l.h / 2), w: l.w, h: l.h };
 
       if (aabb(shipBox, laserBox)) {
+        // GOD o INVUL: inmune a láseres/enemigos/asteroides. El láser se consume.
+        if (GOD_SHIELDS || ELEMENT_INVUL) {
+          invulTimer = Math.max(invulTimer, 20);
+          spawnMiniFX(ship.x, ship.y);
+          lasers.splice(i,1);
+          continue;
+        }
+
         if (invulTimer <= 0) {
           if (shields > 0) {
-            if (!GOD_SHIELDS) shields--;
+            shields--;
             showShieldLoss();
             invulTimer = 60; // ~1s (frames)
             // pequeño FX (sin shake)
@@ -4238,7 +4334,7 @@ function maybeEnterPhase3(){
             return;
           }
         } else {
-          // invulnerable: consume el láser para evitar "metralleta" visual
+          // invulnerable temporal: consume el láser para evitar "metralleta" visual
           lasers.splice(i,1);
           continue;
         }
@@ -4300,14 +4396,26 @@ function maybeEnterPhase3(){
     // --- 2. Colisión NAVE vs ASTEROIDES ---
     for (const a of asteroids) {
       if (circleHit(ship.x, ship.y, ship.r, a.x, a.y, (a.hitR ?? (a.r * 0.92)))) {
+        // GOD o INVUL: no pierde escudo ni muere por asteroides.
+        if (GOD_SHIELDS || ELEMENT_INVUL) {
+		  invulTimer = Math.max(invulTimer, 20);
+
+		  playShieldHit();      // <- añadir
+		  impactShake();        // <- opcional, recomendable
+
+		  spawnMiniFX(ship.x, ship.y);
+		  a.dead = true;
+		  continue;
+		}
+
         if (invulTimer <= 0) {
           if (shields > 0) {
-            if (!GOD_SHIELDS) shields--;
+            shields--;
             showShieldLoss();
 			spawnHitScreenFX(shields === 1 ? 1.15 : 1.0);
 			spawnMiniFX(ship.x, ship.y); // opcional, queda muy bien para “impacto”
 			impactShake();
-			
+
             invulTimer = 60;
             //playShieldHit();
             a.dead = true; 
@@ -4324,9 +4432,21 @@ function maybeEnterPhase3(){
     for (const t of ties) {
       const tieHit = { x: t.x + 14, y: t.y - (t.h / 2) + 10, w: t.w - 28, h: t.h - 20 };
       if (aabb(shipHit, tieHit)) {
+        // GOD o INVUL: no pierde escudo ni muere por TIEs.
+        if (GOD_SHIELDS || ELEMENT_INVUL) {
+		  invulTimer = Math.max(invulTimer, 20);
+
+		  playShieldHit();
+		  impactShake();
+
+		  spawnMiniFX(ship.x, ship.y);
+		  t.dead = true;
+		  continue;
+		}
+
         if (invulTimer <= 0) {
           if (shields > 0) {
-            if (!GOD_SHIELDS) shields--;
+            shields--;
             showShieldLoss();
 			spawnHitScreenFX(shields === 1 ? 1.15 : 1.0);
 			spawnMiniFX(ship.x, ship.y); // opcional, queda muy bien para “impacto”
@@ -4753,31 +4873,30 @@ function draw(){
     }
 
    for (const l of lasers){
+	  const x = l.x | 0;
+	  const y = l.y | 0;
+	  const w = l.w | 0;
 
-	  const r = 3 + Math.random()*2;
-
+	  // halo verde visible
 	  ctx.save();
-	  ctx.globalAlpha = 0.35;
-	  ctx.fillStyle = "rgba(0,255,80,0.35)";
-
-	  ctx.beginPath();
-	  ctx.roundRect(
-		(l.x|0)-4,
-		((l.y-1)|0)-4,
-		(l.w+8)|0,
-		10,
-		r
-	  );
-	  ctx.fill();
+	  ctx.globalAlpha = 0.45;
+	  ctx.shadowColor = "rgb(0,255,90)";
+	  ctx.shadowBlur = 12;
+	  ctx.fillStyle = "rgba(0,255,80,0.55)";
+	  ctx.fillRect(x - 2, y - 3, w + 4, 6);
 	  ctx.restore();
 
 	  // cuerpo verde
+	  ctx.save();
+	  ctx.shadowColor = "rgb(0,255,90)";
+	  ctx.shadowBlur = 5;
 	  ctx.fillStyle = "rgb(0,255,80)";
-	  ctx.fillRect(l.x|0, (l.y - 1)|0, l.w|0, 2);
+	  ctx.fillRect(x, y - 2, w, 4);
+	  ctx.restore();
 
 	  // núcleo blanco
-	  ctx.fillStyle = "rgba(255,255,255,.55)";
-	  ctx.fillRect((l.x + 2)|0, l.y|0, (l.w - 6)|0, 1);
+	  ctx.fillStyle = "rgba(235,255,235,.85)";
+	  ctx.fillRect(x + 2, y - 1, Math.max(2, w - 6), 1);
 	}
 	
 	// power-ups (solo cuando el juego está corriendo)
